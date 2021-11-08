@@ -14,10 +14,20 @@ struct light_t
     vec3 color;
 };
 
+struct mesh_data
+{
+    int material_index;
+    uint index_offset;
+    uint vertex_offset;
+};
+
 layout(std140, set = 0, binding = 0) uniform camera_ubo
 {
-	vec3 position;
-	vec3 direction;
+    vec3 pos;
+    mat4 view;
+    mat4 proj;
+    mat4 inv_view;
+    mat4 inv_proj;
 } camera;
 
 layout(std140, set = 0, binding = 1) readonly buffer lights_sbo
@@ -25,9 +35,14 @@ layout(std140, set = 0, binding = 1) readonly buffer lights_sbo
     light_t lights[];
 };
 
-layout (std140, set = 0, binding = 3) readonly buffer material_sbo 
+layout(std140, set = 0, binding = 3) readonly buffer material_sbo 
 {
     material materials[];
+};
+
+layout(std140, set = 0, binding = 4) readonly buffer mesh_sbo
+{
+    mesh_data meshes[];
 };
 
 layout(location = 0) in VS_IN 
@@ -35,7 +50,7 @@ layout(location = 0) in VS_IN
     vec3 world_pos;
     vec3 normal;
     vec2 uv;
-    flat int material_index;
+    flat int mesh_index;
     flat int light_count;
 };
 
@@ -65,7 +80,7 @@ float g_smith(float alpha, float NdotV, float NdotL)
 void main()
 {
     vec3 N = normal;
-	vec3 V = normalize(camera.position - world_pos);
+	vec3 V = normalize(camera.pos - world_pos);
 
     out_color = vec4(0);
     for (int i = 0; i < light_count; ++i)
@@ -79,7 +94,8 @@ void main()
         float HdotL = clamp(dot(H, L), 0.0, 1.0);
         float NdotL = clamp(dot(N, L), 0.0, 1.0);
 
-        if (material_index == -1)
+        mesh_data mesh = meshes[mesh_index];
+        if (mesh.material_index == -1)
         {
             vec3 kd = vec3(1.0);
             vec3 ks = vec3(0.5);
@@ -94,7 +110,7 @@ void main()
             continue;
         }
 
-        material mat = materials[material_index];
+        material mat = materials[mesh.material_index];
         vec3 F0 = mix(vec3(0.04), mat.base_color, mat.metalness);
         vec3 r_diffuse = mat.base_color * (1.0 - mat.metalness);
         float a  = mat.roughness * mat.roughness;

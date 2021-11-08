@@ -17,4 +17,10 @@ typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
+inline u64 align(u64 offset, u64 alignment)
+{
+    return (offset + alignment - 1) & ~(alignment - 1);
+}
+
+
 #endif // COMMON_H

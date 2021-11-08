@@ -1,5 +1,4 @@
 #include "pipeline.h"
-#include "backend.h"
 #include "file.h"
 #include "log.h"
 
@@ -22,30 +21,6 @@ static u32 format_size(VkFormat format)
     default: break;                                
     }
     return res;
-}
-#endif
-
-#ifdef REFLECT_DESCRIPTOR_SETS
-static void merge_layout_bindings(std::vector<VkDescriptorSetLayoutBinding>& old_bindings, 
-        const std::vector<VkDescriptorSetLayoutBinding>& new_bindings)
-{
-    for (auto& new_binding : new_bindings)
-    {
-        bool merged = false;
-        for (auto& old_binding : old_bindings)
-        {
-            if (old_binding.binding == new_binding.binding)
-            {
-                old_binding.stageFlags = static_cast<VkShaderStageFlagBits>(old_binding.stageFlags | new_binding.stageFlags);
-                merged = true;
-                break;
-            }
-        }
-        if (!merged)
-        {
-            old_bindings.push_back(new_binding);
-        }
-    }
 }
 #endif
 
@@ -83,72 +58,8 @@ void add_shader(pipeline_description_t& description, VkShaderStageFlagBits stage
         LOG_FATAL("Coud not load spv reflect module");
     }
 
+    // push constant
     u32 count = 0;
-#ifdef REFLECT_DESCRIPTOR_SETS
-    // descriptors
-    res = spvReflectEnumerateDescriptorSets(&module, &count, nullptr);
-    assert(res == SPV_REFLECT_RESULT_SUCCESS);
-
-    std::vector<SpvReflectDescriptorSet*> sets(count);
-    res = spvReflectEnumerateDescriptorSets(&module, &count, sets.data());
-    assert(res == SPV_REFLECT_RESULT_SUCCESS);
-
-    std::vector<descriptor_set_data_t> set_layouts(sets.size(), descriptor_set_data_t{});
-    for (size_t i = 0; i < sets.size(); ++i)
-    {
-        const auto& refl_set = *(sets[i]);
-        auto& layout = set_layouts[i];
-        layout.bindings.resize(refl_set.binding_count);
-        for (u32 k = 0; k < refl_set.binding_count; ++k)
-        {
-            const auto& refl_binding = *(refl_set.bindings[k]);
-            auto& layout_binding = layout.bindings[k];
-            layout_binding.binding = refl_binding.binding;
-            layout_binding.descriptorType = static_cast<VkDescriptorType>(refl_binding.descriptor_type);
-            layout_binding.stageFlags = static_cast<VkShaderStageFlagBits>(module.shader_stage); // ?
-            layout_binding.descriptorCount = 1;
-            for (u32 i_dim = 0; i_dim < refl_binding.array.dims_count; ++i_dim)
-            {
-                layout_binding.descriptorCount *= refl_binding.array.dims[i_dim];
-            }
-            LOG_INFO("set: %d, binding: bind %d, type %d, stage %d", refl_set.set, layout_binding.binding, layout_binding.descriptorType, layout_binding.stageFlags);
-        }
-        layout.set_id = refl_set.set;
-        layout.create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
-        layout.create_info.bindingCount = refl_set.binding_count;
-        layout.create_info.pBindings = layout.bindings.data();
-    }
-
-    // merge with previous descriptors layouts
-    if (description.descriptor_sets.size() == 0)
-    {
-        description.descriptor_sets = set_layouts;
-    } 
-    else 
-    {
-        for (auto& new_layout : set_layouts)
-        {
-            bool merged = false;
-            for (auto& old_layout : description.descriptor_sets)
-            {
-                if (old_layout.set_id == new_layout.set_id)
-                {
-                    merge_layout_bindings(old_layout.bindings, new_layout.bindings);
-                    old_layout.create_info.bindingCount = static_cast<u32>(old_layout.bindings.size());
-                    old_layout.create_info.pBindings    = old_layout.bindings.data();
-                    merged = true;
-                    break;
-                }
-            }
-            if (!merged)
-            {
-                description.descriptor_sets.push_back(new_layout);
-            }
-        }
-    }
-#endif 
-
-    // push constants
     res = spvReflectEnumeratePushConstantBlocks(&module, &count, nullptr);
     assert(res == SPV_REFLECT_RESULT_SUCCESS);
     
@@ -225,6 +136,12 @@ void add_shader(pipeline_description_t& description, VkShaderStageFlagBits stage
             attr.offset = binding_description.stride;
             binding_description.stride += size;
         }
+
+        if (attribute_descriptions.size() == 0)
+        {
+            description.binding_descriptions.clear();
+        }
+
     }
 #endif 
     spvReflectDestroyShaderModule(&module);
@@ -455,7 +372,57 @@ bool build_graphics_pipeline(gpu_context_t& ctx, pipeline_description_t& desc, p
 	return true;
 }
 
-bool create_raytracing_pipeline(gpu_context_t& ctx, rt_pipeline_description_t& desc, pipeline_t* pipeline)
+void add_shader(rt_pipeline_description_t& description, VkShaderStageFlagBits stage, std::string entry, const char* path)
+{
+    file_contents_t shader_code;
+    if (!read_file(path, &shader_code))
+    {
+        LOG_ERROR("Could not load shader code");
+    }
+
+    shader_t shader;
+    shader.entry = entry;
+    shader.code = std::vector<u8>(shader_code.contents, shader_code.contents + shader_code.size);
+    shader.stage = stage;
+    description.shaders.push_back(shader);
+
+    // use reflection to get descriptors, push_constants and inputs/outputs
+    SpvReflectShaderModule module;
+    SpvReflectResult res;
+    res = spvReflectCreateShaderModule(shader_code.size, shader_code.contents, &module);
+    if (res != SPV_REFLECT_RESULT_SUCCESS)
+    {
+        LOG_FATAL("Coud not load spv reflect module");
+    }
+
+    u32 count = 0;
+    res = spvReflectEnumeratePushConstantBlocks(&module, &count, nullptr);
+    assert(res == SPV_REFLECT_RESULT_SUCCESS);
+    
+    std::vector<SpvReflectBlockVariable*> blocks(count);
+    res = spvReflectEnumeratePushConstantBlocks(&module, &count, blocks.data());
+    assert(res == SPV_REFLECT_RESULT_SUCCESS);
+
+    if (blocks.size() > 0)
+    {
+        auto& push_constants = description.push_constants;
+        auto& block = *(blocks[0]);
+        if (push_constants.size() == 0)
+        {
+            description.push_constants.resize(1, VkPushConstantRange{});
+            push_constants[0].stageFlags = static_cast<VkShaderStageFlagBits>(module.shader_stage);
+            push_constants[0].offset     = block.offset;
+            push_constants[0].size       = block.padded_size;
+        } 
+        else
+        {
+            push_constants[0].stageFlags |= static_cast<VkShaderStageFlagBits>(module.shader_stage);
+        }
+        LOG_INFO("push_constant size = %d", push_constants[0].size);
+    }
+}
+
+bool build_raytracing_pipeline(gpu_context_t& ctx, rt_pipeline_description_t& desc, pipeline_t* pipeline)
 {
 	std::vector<VkPipelineShaderStageCreateInfo> shader_stage_infos(desc.shaders.size());
 	std::vector<VkShaderModule> shader_modules(desc.shaders.size());
@@ -510,6 +477,7 @@ bool create_raytracing_pipeline(gpu_context_t& ctx, rt_pipeline_description_t& d
 	layout_info.pPushConstantRanges = desc.push_constants.data();
     
     VK_CHECK( vkCreatePipelineLayout(ctx.device, &layout_info, nullptr, &pipeline->layout) );
+    LOG_INFO("Created pipeline layout");
 
     VkRayTracingPipelineCreateInfoKHR create_info{};
     create_info.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR;
@@ -537,5 +505,84 @@ bool create_raytracing_pipeline(gpu_context_t& ctx, rt_pipeline_description_t& d
 	}
 	LOG_INFO("Shader modules destroyed");
     return true;
+}
+
+bool build_shader_binding_table(gpu_context_t& context, rt_pipeline_description_t& description, pipeline_t& pipeline, shader_binding_table_t& sbt)
+{
+    auto& regions = description.sbt_regions;
+    if (regions[RGEN_REGION].size() == 0 || regions[RGEN_REGION].size() > 1)
+    {
+        LOG_ERROR("Missing or more than 1 rgen region(s) in the shader binding table");
+        return false;
+    }
+
+    u32 handle_size = context.rt_properties.shaderGroupHandleSize;
+    u32 handle_count = static_cast<u32>(description.shaders.size());
+    u32 handle_alignment = align(handle_size, context.rt_properties.shaderGroupHandleAlignment);
+    u32 base_alignment = context.rt_properties.shaderGroupBaseAlignment;
+    LOG_INFO("handle_size = %d, handle_alignment = %d, base_alignment = %d", handle_size, handle_alignment, base_alignment);
+
+    sbt.rgen.deviceAddress = 0;
+    sbt.rgen.stride = align(handle_size, base_alignment);
+    sbt.rgen.size = sbt.rgen.stride; // stride = size for rgen according to spec
+
+    sbt.hit.deviceAddress = 0;
+    sbt.hit.stride = handle_alignment;
+    sbt.hit.size = regions[CHIT_REGION].size() * handle_size;
+
+    sbt.miss.deviceAddress = 0;
+    sbt.miss.stride = handle_alignment;
+    sbt.miss.size = regions[MISS_REGION].size() * handle_size; 
+
+    sbt.call.deviceAddress = 0;
+    sbt.call.stride = handle_alignment;
+    sbt.call.size = regions[CALL_REGION].size() * handle_size;
+
+    // create buffer
+    u64 buffer_size = align(sbt.rgen.size + sbt.hit.size + sbt.miss.size + sbt.call.size, base_alignment);
+    LOG_INFO("shader binding table buffer size = %ld", buffer_size);
+    LOG_INFO("shader binding table buffer size = %ld", align(sbt.rgen.size + sbt.hit.size, base_alignment) + sbt.miss.size);
+    create_buffer(context, buffer_size, VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT,
+            &sbt.buffer, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    auto buffer_address = get_buffer_device_address(context, sbt.buffer.handle);
+
+    // write handles to buffer
+    u32 data_size = handle_count * handle_size;
+    std::vector<u8> handles(data_size);
+    VK_CHECK( vkGetRayTracingShaderGroupHandles(context.device, pipeline.handle, 0, handle_count, data_size, handles.data()) );
+
+    u8* p_data;
+    context.allocator.map_memory(sbt.buffer.allocation, (void**)&p_data);
+    u64 offset = 0;
+    for (size_t i = 0; i < 4; ++i)
+    {
+        auto& reg = regions[i];
+        u8* ptr = p_data + align(offset, base_alignment); 
+        switch (i)
+        {
+            case RGEN_REGION: sbt.rgen.deviceAddress = buffer_address + offset; break;
+            case CHIT_REGION: sbt.hit.deviceAddress  = buffer_address + offset; break;
+            case MISS_REGION: sbt.miss.deviceAddress = buffer_address + offset; break;
+            case CALL_REGION: sbt.call.deviceAddress = buffer_address + offset; break;
+            default: break;
+        }
+        for (size_t k = 0; k < reg.size(); ++k)
+        {
+            memcpy(ptr + k * handle_size, handles.data() + reg[k] * handle_size, handle_size);
+        }
+        offset += align(handle_size * reg.size(), base_alignment);
+    }
+    LOG_INFO("written to sbt buffer");
+    context.allocator.unmap_memory(sbt.buffer.allocation);
+    return true;
+}
+
+void destroy_pipeline(gpu_context_t& ctx, pipeline_t* pipeline)
+{
+    if (pipeline)
+    {
+        vkDestroyPipeline(ctx.device, pipeline->handle, nullptr);
+        vkDestroyPipelineLayout(ctx.device, pipeline->layout, nullptr);
+    }
 }
 

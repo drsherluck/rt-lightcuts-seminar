@@ -19,14 +19,12 @@ void init_staging_buffer(staging_buffer_t& staging, gpu_context_t* p_context)
     create_buffer(*staging.context, STAGING_DEFAULT_ALLOCATION, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &staging.buffer,
             VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
     p_context->allocator.map_memory(staging.buffer.allocation, (void**)&staging.mapped);
-    LOG_INFO("init staging");
 }
 
 void destroy_staging_buffer(staging_buffer_t& staging)
 {
     staging.context->allocator.unmap_memory(staging.buffer.allocation);
     destroy_buffer(*staging.context, staging.buffer);
-    LOG_INFO("destroy staging");
 }
 
 void copy_to_buffer(staging_buffer_t& staging, VkCommandBuffer cmd, buffer_t& dst, u32 size, void* data, u64 offset)

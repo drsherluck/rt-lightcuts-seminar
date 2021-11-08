@@ -5,6 +5,8 @@
 #include "camera.h"
 #include "log.h"
 
+#include <algorithm>
+
 #define WIDTH 1024
 #define HEIGHT 768
 
@@ -65,10 +67,19 @@ int main()
         add_entity(scene, 0, 0, translate4x4(0, 0, 4));
         add_entity(scene, 0, 0, translate4x4(0, 1, 4) * scale4x4(0.5) * rotate4x4_y(radians(45)));
         add_entity(scene, 1, 1, translate4x4(0, -0.5, 4) * scale4x4(2));
-        add_light(scene, vec3(0, 5, 4), vec3(1));
+        //add_light(scene, vec3(0, 5, 4), vec3(1));
         add_light(scene, vec3(1, 2, 1), vec3(0,0,1));
-        add_light(scene, vec3(-2, 1, 4), vec3(1,0,0));
+        add_light(scene, vec3(-2, 1, 4), vec3(0,0.8,0));
+
+        std::sort(std::begin(scene.entities), std::end(scene.entities),
+                [](const entity_t& a, const entity_t& b) 
+                { return a.mesh_id < b.mesh_id; });
+
+        create_acceleration_structures(renderer.context, scene);
     }
+
+    // create descriptor sets;
+    renderer.update_descriptors(scene);
 
     camera.position = vec3(0, 2, 1);
     camera.lookat(vec3(0, 0, 4));
@@ -84,6 +95,7 @@ int main()
         if (dt >= 0.01667) 
         {
             scene.entities[1].m_model *= rotate4x4_y(dt);
+            update_acceleration_structures(renderer.context, scene);
             time.prev = time.curr;
             run = window.poll_events();
 
@@ -101,6 +113,8 @@ int main()
             renderer.draw_scene(scene, camera);
         }
     }
+
+    destroy_scene(renderer.context, scene);
 
     return 0;
 }

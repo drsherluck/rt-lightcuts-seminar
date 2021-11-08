@@ -2,8 +2,8 @@
 #define PIPELINE_H
 
 #include "common.h"
+#include "backend.h"
 
-#include <vulkan/vulkan.h>
 #include <vector>
 #include <string>
 
@@ -41,7 +41,7 @@ struct pipeline_t
 {
     VkPipeline                         handle;
     VkPipelineLayout                   layout;
-    pipeline_description_t             description;
+    //pipeline_description_t             description; // for swapchain recreation
     std::vector<VkDescriptorSetLayout> descriptor_set_layouts;
 };
 
@@ -54,6 +54,16 @@ struct shader_group_t
     u32 intersection;
 };
 
+enum sbt_region
+{
+    RGEN_REGION = 0,
+    CHIT_REGION = 1,   
+    MISS_REGION = 2,
+    CALL_REGION = 3
+};
+
+typedef std::vector<u32> shader_binding_table_regions[4];
+
 struct rt_pipeline_description_t
 {
     u32                         max_recursion_depth;
@@ -61,27 +71,27 @@ struct rt_pipeline_description_t
     std::vector<shader_group_t> groups;
     std::vector<VkDescriptorSetLayout> descriptor_set_layouts;
     std::vector<VkPushConstantRange>   push_constants;
+    shader_binding_table_regions sbt_regions;
+};
+
+struct shader_binding_table_t
+{
+    buffer_t buffer;
+    VkStridedDeviceAddressRegionKHR rgen;
+    VkStridedDeviceAddressRegionKHR hit;
+    VkStridedDeviceAddressRegionKHR miss;
+    VkStridedDeviceAddressRegionKHR call;
 };
 
 struct gpu_context_t;
-
-inline bool get_binding_layout(pipeline_t& pipeline, u32 set, u32 binding_id, VkDescriptorSetLayoutBinding& out)
-{
-
-    for (const auto& layout : pipeline.description.descriptor_sets[set].bindings)
-    {
-        if (layout.binding == binding_id)
-        {
-            out = layout;
-            return true;
-        }
-    }
-    return false;
-}
-
 
 void init_graphics_pipeline_description(gpu_context_t& ctx, pipeline_description_t& description);
 void add_shader(pipeline_description_t& description, VkShaderStageFlagBits stage, std::string entry, const char* path);
 bool build_graphics_pipeline(gpu_context_t& ctx, pipeline_description_t& description, pipeline_t& pipeline);
 
+bool build_raytracing_pipeline(gpu_context_t& ctx, rt_pipeline_description_t& description, pipeline_t* pipeline);
+bool build_shader_binding_table(gpu_context_t& ctx, rt_pipeline_description_t& description, pipeline_t& pipeline, shader_binding_table_t& sbt);
+void add_shader(rt_pipeline_description_t& description, VkShaderStageFlagBits stage, std::string entry, const char* path);
+
+void destroy_pipeline(gpu_context_t& ctx, pipeline_t* pipeline);
 #endif

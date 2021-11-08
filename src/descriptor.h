@@ -32,12 +32,14 @@ struct descriptor_set_t
 {
     descriptor_set_layout_t layout;
     std::vector<VkWriteDescriptorSet> writes;
+    std::vector<VkWriteDescriptorSetAccelerationStructureKHR> acceleration_structure_writes;
 
     descriptor_set_t(descriptor_set_layout_t set_layout) : layout(set_layout) {}
 };
 
 void bind_buffer(descriptor_set_t& set, u32 binding, VkDescriptorBufferInfo* info);
 void bind_image(descriptor_set_t& set, u32 binding, VkDescriptorImageInfo* info);
+void bind_acceleration_structure(descriptor_set_t& set, u32 binding, VkAccelerationStructureKHR* acceleration_struture);
 VkDescriptorSet build_descriptor_set(descriptor_allocator_t& allocator, descriptor_set_t& set);
 
 #endif

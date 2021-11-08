@@ -3,6 +3,7 @@
 
 #include "math.h"
 #include "backend.h"
+#include "acceleration_struct.h"
 
 #include <vector>
 
@@ -21,9 +22,18 @@ struct mesh_t
     u32      id;
     u32      index_count;
     u32      index_offset;
+    u32      vertex_count;
     u32      vertex_offset;
+
+    // todo: remove these
     VkBuffer vbo;
     VkBuffer ibo;
+};
+
+struct prefab_t
+{
+    u32 mesh_id;
+    i32 material_index;
 };
 
 struct light_t
@@ -43,24 +53,23 @@ struct model_t
 struct camera_ubo_t 
 {
     aligned_v3 position;
-    aligned_v3 direction;
+    m4x4 view;
+    m4x4 proj;
+    m4x4 inv_view;
+    m4x4 inv_proj;
 };
 
 struct scene_t
 {
-    m4x4 m_transform;
     std::vector<entity_t> entities;
     std::vector<light_t>  lights;
-    buffer_t vbo, ibo;
 
-    std::vector<mesh_t>   meshes;
-    std::vector<material_t> materials;
-
-    scene_t() = default;
-    scene_t(m4x4 transform)
-    {
-        m_transform = transform;
-    }
+    buffer_t vbo;
+    buffer_t ibo;
+    std::vector<mesh_t>                   meshes;
+    std::vector<material_t>               materials;
+    acceleration_structure_t              tlas;
+    std::vector<acceleration_structure_t> blas; // same order as meshes
 };
 
 inline void add_entity(scene_t& scene, u32 mesh_id, i32 material_index, m4x4 m_model)
@@ -80,5 +89,8 @@ inline void add_material(scene_t& scene, material_t& material)
 
 // creates vbo and ibo and uploads the data to the gpu
 void create_scene(gpu_context_t& context, std::vector<mesh_data_t>& mesh_data, scene_t& scene);
+void destroy_scene(gpu_context_t& context, scene_t& scene);
+void create_acceleration_structures(gpu_context_t& context, scene_t& scene);
+void update_acceleration_structures(gpu_context_t& context, scene_t& scene);
 
 #endif

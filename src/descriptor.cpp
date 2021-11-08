@@ -83,6 +83,27 @@ void bind_image(descriptor_set_t& set, u32 binding, VkDescriptorImageInfo* info)
     write.pImageInfo = info;
     set.writes.push_back(write);
 }
+
+void bind_acceleration_structure(descriptor_set_t& set, u32 binding, VkAccelerationStructureKHR* acceleration_structure)
+{
+    auto& bind = set.layout.bindings[binding];
+
+    VkWriteDescriptorSetAccelerationStructureKHR write_acceleration_structure = {};
+    write_acceleration_structure.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+    write_acceleration_structure.pNext = nullptr;
+    write_acceleration_structure.accelerationStructureCount = 1;
+    write_acceleration_structure.pAccelerationStructures = acceleration_structure;
+    set.acceleration_structure_writes.push_back(write_acceleration_structure);
+
+    VkWriteDescriptorSet write = {};
+    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    write.pNext = &set.acceleration_structure_writes.back();
+    write.dstBinding = bind.binding;
+    write.dstArrayElement = 0;
+    write.descriptorCount = bind.descriptorCount;
+    write.descriptorType = bind.descriptorType;
+    set.writes.push_back(write);
+}
     
 VkDescriptorSet build_descriptor_set(descriptor_allocator_t& allocator, descriptor_set_t& set) 
 {
