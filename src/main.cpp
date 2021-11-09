@@ -4,33 +4,12 @@
 #include "scene.h"
 #include "camera.h"
 #include "log.h"
+#include "time.h"
 
 #include <algorithm>
 
 #define WIDTH 1024
 #define HEIGHT 768
-
-struct frame_time_t
-{
-    clock_t curr;
-    clock_t prev;
-    clock_t delta;
-};
-
-inline clock_t get_fps(frame_time_t& time)
-{
-    clock_t fps = 0;
-    if (time.delta)
-    {
-        fps = CLOCKS_PER_SEC/time.delta;
-    }
-    return fps;
-}
-
-inline f32 get_delta_seconds(frame_time_t& time)
-{
-    return time.delta/static_cast<f32>(CLOCKS_PER_SEC);
-}
 
 int main()
 {
@@ -67,9 +46,9 @@ int main()
         add_entity(scene, 0, 0, translate4x4(0, 0, 4));
         add_entity(scene, 0, 0, translate4x4(0, 1, 4) * scale4x4(0.5) * rotate4x4_y(radians(45)));
         add_entity(scene, 1, 1, translate4x4(0, -0.5, 4) * scale4x4(2));
-        //add_light(scene, vec3(0, 5, 4), vec3(1));
-        add_light(scene, vec3(1, 2, 1), vec3(0,0,1));
-        add_light(scene, vec3(-2, 1, 4), vec3(0,0.8,0));
+        //add_light(scene, vec3(0, 5, 4), vec3(0,0,1));
+        add_light(scene, vec3(1, 2, 1), vec3(1));
+        add_light(scene, vec3(-2, 1, 4), vec3(1));
 
         std::sort(std::begin(scene.entities), std::end(scene.entities),
                 [](const entity_t& a, const entity_t& b) 
@@ -85,13 +64,12 @@ int main()
     camera.lookat(vec3(0, 0, 4));
 
     // render loop
-    frame_time_t time{0,0,0};
+    frame_time_t time;
     bool run = true;
     while(run)
     {
-        time.curr  = clock();
-        time.delta = time.curr - time.prev;
-        f32 dt = get_delta_seconds(time);
+        update_time(time);
+        f32 dt = delta_in_seconds(time);
         if (dt >= 0.01667) 
         {
             scene.entities[1].m_model *= rotate4x4_y(dt);
@@ -108,6 +86,7 @@ int main()
             if (is_key_pressed(window, KEY_P))
             {
                 renderer.context.allocator.print_memory_usage();
+                print_time_info(time);
             }
 
             renderer.draw_scene(scene, camera);
