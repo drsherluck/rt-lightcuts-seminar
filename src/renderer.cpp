@@ -6,7 +6,7 @@
 #include <cassert>
 
 #define MAX_ENTITIES 100
-#define MAX_LIGHTS 100
+#define MAX_LIGHTS 1000000
 
 struct mesh_metadata_t
 {

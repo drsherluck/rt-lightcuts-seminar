@@ -11,6 +11,23 @@
 #define WIDTH 1024
 #define HEIGHT 768
 
+#define _randf() (((f32) rand()/(RAND_MAX)) + 1.0)
+#define _randf2() ((((f32) rand()/(RAND_MAX)) + 1.0) * (rand() % 2 ? -1.0 : 1.0))
+
+#define RANDOM_LIGHT_COUNT 3
+
+static void add_random_lights(scene_t& scene, u32 count, v3 origin, f32 max_distance)
+{
+    for (u32 i = 0; i < count; ++i)
+    {
+        v3 color = vec3(_randf(), _randf(), _randf());
+        v3 pos = vec3(_randf2(), _randf2(), _randf2());
+        pos *= max_distance/length(pos);
+        pos = origin + pos;
+        add_light(scene, pos, color);
+    }
+}
+
 int main()
 {
     window_t window;
@@ -47,8 +64,9 @@ int main()
         add_entity(scene, 0, 0, translate4x4(0, 1, 4) * scale4x4(0.5) * rotate4x4_y(radians(45)));
         add_entity(scene, 1, 1, translate4x4(0, -0.5, 4) * scale4x4(2));
         //add_light(scene, vec3(0, 5, 4), vec3(0,0,1));
-        add_light(scene, vec3(1, 2, 1), vec3(1));
-        add_light(scene, vec3(-2, 1, 4), vec3(1,1,0.2));
+        //add_light(scene, vec3(1, 2, 1), vec3(1));
+        //add_light(scene, vec3(-2, 1, 4), vec3(1,1,0.2));
+        add_random_lights(scene, RANDOM_LIGHT_COUNT, vec3(0,0,4), 10);
 
         std::sort(std::begin(scene.entities), std::end(scene.entities),
                 [](const entity_t& a, const entity_t& b) 
@@ -70,11 +88,10 @@ int main()
     {
         update_time(time);
         f32 dt = delta_in_seconds(time);
-        if (1 || dt >= 0.01667) 
+        if (1)
         {
             scene.entities[1].m_model *= rotate4x4_y(dt);
-//            update_acceleration_structures(renderer.context, scene);
-            time.prev = time.curr;
+            update_acceleration_structures(renderer.context, scene);
             run = window.poll_events();
 
             camera.update(dt, window);

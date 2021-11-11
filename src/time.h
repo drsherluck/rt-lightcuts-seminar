@@ -4,65 +4,65 @@
 #include "log.h"
 #include "common.h"
 
-#include <ctime>
+#include <chrono>
 
 struct frame_time_t
 {
-    clock_t curr            = 0;
-    clock_t prev            = 0;
-    clock_t delta           = 0;
-    clock_t prev_average_dt = 0;
-    clock_t average_dt      = 0;
-    clock_t _total_dt       = 0;
-    u64 _counter            = 0;
+    std::chrono::steady_clock::time_point curr;
+    std::chrono::steady_clock::time_point prev;
+    f32 delta = 0;
+    f32 prev_average_dt = 0;
+    f32 average_dt = 0;
+    f32 _total_dt = 0;
+    u64 _counter = 0;
 };
 
-inline clock_t get_fps(frame_time_t& time)
+inline u32 get_fps(frame_time_t& time)
 {
-    clock_t fps = 0;
+    u32 fps = 0;
     if (time.delta)
     {
-        fps = CLOCKS_PER_SEC/time.delta;
+        fps = static_cast<u32>(1.0/time.delta);
     }
     return fps;
 }
 
-inline clock_t get_average_fps(frame_time_t& time)
+inline u32 get_average_fps(frame_time_t& time)
 {
-    clock_t fps = 0;
+    u32 fps = 0;
     if (time.delta)
     {
-        fps = CLOCKS_PER_SEC/time.average_dt;
+        fps = static_cast<u32>(1.0/time.average_dt);
     }
     return fps;
 }
 
 inline f32 delta_in_seconds(frame_time_t& time)
 {
-    return time.delta/static_cast<f32>(CLOCKS_PER_SEC);
+    return time.delta;
 }
 
 inline void update_time(frame_time_t& time)
 {
-    time.curr = clock();
-    time.delta = time.curr - time.prev;
+    static f32 sec = std::chrono::duration<f32>().count();
+    time.curr = std::chrono::steady_clock::now();
+    time.delta = std::chrono::duration_cast<std::chrono::duration<f32>>(time.curr - time.prev).count();
+    time.prev = time.curr;
     time._total_dt += time.delta;
     time._counter++;
-    if (time._total_dt >= CLOCKS_PER_SEC * 0.25)
+    if (time._total_dt >= sec * 0.1)
     {
         time.prev_average_dt = time.average_dt;
         time.average_dt = time._total_dt / time._counter;
-        time._total_dt  = 0;
-        time._counter   = 0;
+        time._total_dt = 0;
+        time._counter = 0;
     }
 }
 
 inline void print_time_info(frame_time_t& time)
 {
     LOG_INFO("\ntimings\n{\n\tfps: %d\n\trenderer_time: %f ms\n\trender_dt: %f ms\n}",
-            get_average_fps(time), 
-            (time.average_dt * 1000.0)/static_cast<f32>(CLOCKS_PER_SEC),
-            ((time.average_dt - time.prev_average_dt) * 1000.0)/static_cast<f32>(CLOCKS_PER_SEC));
+            get_average_fps(time), time.average_dt * 1000.0, (time.average_dt - time.prev_average_dt) * 1000.0);
 }
 
 #endif //TIME_H
