@@ -4,10 +4,13 @@
 //#include "util.h"
 
 #include <cassert>
+#include <utility>
 
 void init_acceleration_structure_builder(acceleration_structure_builder_t& builder, gpu_context_t* ctx)
 {
+    LOG_INFO("INIT AS BUILDER");
     builder.context = ctx;
+    //builder.staging = staging_buffer_t(ctx);
     init_staging_buffer(builder.staging, ctx);
 }
 
@@ -41,24 +44,27 @@ void build_tlas(acceleration_structure_builder_t& builder,
 {
     VkBuildAccelerationStructureFlagsKHR build_flags = VK_BUILD_ACCELERATION_STRUCTURE_PREFER_FAST_TRACE_BIT_KHR | VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR;
     gpu_context_t& ctx = *(builder.context);
-    VkCommandBuffer cmd = begin_one_time_command_buffer(ctx, ctx.frames[0].command_pool);
 
     // create buffer for instance(s)
     u32 size_instance_buffer = static_cast<u32>(instances.size() * sizeof(VkAccelerationStructureInstanceKHR));
     buffer_t instance_buffer;
     create_buffer(ctx, size_instance_buffer, VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT | 
             VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR, &instance_buffer);
-    copy_to_buffer(builder.staging, cmd, instance_buffer, size_instance_buffer, (void*)instances.data());
+
+    VkSemaphore upload_complete;
+    begin_upload(builder.staging);
+    copy_to_buffer(builder.staging, instance_buffer, size_instance_buffer, (void*)instances.data());
+    end_upload(builder.staging, &upload_complete);
 
     // wait memory write
-    VkMemoryBarrier barrier;
+    /*VkMemoryBarrier barrier;
     barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
     barrier.pNext = nullptr;
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
     barrier.dstAccessMask = VK_ACCESS_ACCELERATION_STRUCTURE_WRITE_BIT_KHR;
     vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_TRANSFER_BIT, 
             VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR,
-            0, 1, &barrier, 0, nullptr, 0, nullptr);
+            0, 1, &barrier, 0, nullptr, 0, nullptr);*/
 
 
     VkAccelerationStructureGeometryInstancesDataKHR instance_data{};
@@ -110,6 +116,8 @@ void build_tlas(acceleration_structure_builder_t& builder,
         as.buffer = as_buffer;
     }
 
+    VkCommandBuffer cmd = begin_one_time_command_buffer(ctx, ctx.frames[0].command_pool);
+
     VkAccelerationStructureBuildGeometryInfoKHR build_info = info; // copy info
     build_info.srcAccelerationStructure = update ? acceleration_struct : VK_NULL_HANDLE;
     build_info.dstAccelerationStructure = acceleration_struct;
@@ -119,8 +127,8 @@ void build_tlas(acceleration_structure_builder_t& builder,
     const VkAccelerationStructureBuildRangeInfoKHR* p_build_range = &build_range;
     vkCmdBuildAccelerationStructures(cmd, 1, &build_info, &p_build_range);
 
-    end_and_submit_command_buffer(cmd, ctx.q_transfer);
-    VK_CHECK( vkQueueWaitIdle(ctx.q_transfer) );
+    end_and_submit_command_buffer(cmd, ctx.q_compute, &upload_complete, VK_PIPELINE_STAGE_ACCELERATION_STRUCTURE_BUILD_BIT_KHR);
+    VK_CHECK( vkQueueWaitIdle(ctx.q_compute) );
     destroy_buffer(ctx, instance_buffer);
     destroy_buffer(ctx, scratch_buffer);
 }

@@ -799,13 +799,19 @@ VkCommandBuffer begin_one_time_command_buffer(gpu_context_t& ctx, VkCommandPool 
     return cmd;
 }
 
-void end_and_submit_command_buffer(VkCommandBuffer cmd, VkQueue queue)
+void end_and_submit_command_buffer(VkCommandBuffer cmd, VkQueue queue, VkSemaphore* wait_semaphore, VkPipelineStageFlags wait_stage)
 {
 	VK_CHECK( vkEndCommandBuffer(cmd) );
 
 	VkSubmitInfo submit_info{};
 	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	submit_info.pNext = nullptr;
+    if (wait_semaphore)
+    {
+        submit_info.waitSemaphoreCount = 1;
+        submit_info.pWaitSemaphores = wait_semaphore;
+        submit_info.pWaitDstStageMask = &wait_stage;
+    }
 	submit_info.commandBufferCount = 1;
 	submit_info.pCommandBuffers = &cmd;
 

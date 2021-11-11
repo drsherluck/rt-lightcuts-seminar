@@ -22,11 +22,6 @@ struct acceleration_structure_builder_t
     gpu_context_t* context;
     staging_buffer_t staging; // move to context
     std::vector<blas_input_t> inputs;
-
-    ~acceleration_structure_builder_t()
-    {
-        destroy_staging_buffer(staging);
-    }
 };
 
 void init_acceleration_structure_builder(acceleration_structure_builder_t& builder, gpu_context_t* context);

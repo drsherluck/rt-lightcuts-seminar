@@ -68,6 +68,9 @@ struct scene_t
     buffer_t ibo;
     std::vector<mesh_t>                   meshes;
     std::vector<material_t>               materials;
+
+    acceleration_structure_builder_t      as_builder;
+    std::vector<VkAccelerationStructureInstanceKHR> instances;
     acceleration_structure_t              tlas;
     std::vector<acceleration_structure_t> blas; // same order as meshes
 };

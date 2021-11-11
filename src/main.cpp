@@ -48,7 +48,7 @@ int main()
         add_entity(scene, 1, 1, translate4x4(0, -0.5, 4) * scale4x4(2));
         //add_light(scene, vec3(0, 5, 4), vec3(0,0,1));
         add_light(scene, vec3(1, 2, 1), vec3(1));
-        add_light(scene, vec3(-2, 1, 4), vec3(1));
+        add_light(scene, vec3(-2, 1, 4), vec3(1,1,0.2));
 
         std::sort(std::begin(scene.entities), std::end(scene.entities),
                 [](const entity_t& a, const entity_t& b) 
@@ -70,10 +70,10 @@ int main()
     {
         update_time(time);
         f32 dt = delta_in_seconds(time);
-        if (dt >= 0.01667) 
+        if (1 || dt >= 0.01667) 
         {
             scene.entities[1].m_model *= rotate4x4_y(dt);
-            update_acceleration_structures(renderer.context, scene);
+//            update_acceleration_structures(renderer.context, scene);
             time.prev = time.curr;
             run = window.poll_events();
 

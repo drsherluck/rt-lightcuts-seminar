@@ -24,6 +24,7 @@ struct scene_info_t
 renderer_t::renderer_t(window_t* _window) : window(_window)
 {
     init_context(context, window);
+    //staging = staging_buffer_t(&context);
     init_staging_buffer(staging, &context);
     init_descriptor_allocator(context.device, 50, &descriptor_allocator);
 
@@ -114,6 +115,7 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
 void renderer_t::update_descriptors(scene_t& scene)
 {
     VkCommandBuffer cmd = begin_one_time_command_buffer(context, context.frames[0].command_pool);
+    begin_upload(staging);
     frame_resources.resize(context.frames.size());
     for (size_t i = 0; i < context.frames.size(); ++i)
     {
@@ -174,7 +176,7 @@ void renderer_t::update_descriptors(scene_t& scene)
         scene_info_t scene_info;
         scene_info.vertex_address = get_buffer_device_address(context, scene.vbo.handle);
         scene_info.index_address = get_buffer_device_address(context, scene.ibo.handle);
-        copy_to_buffer(staging, cmd, frame_resources[i].ubo_scene, sizeof(scene_info_t), (void*)&scene_info, 0);
+        copy_to_buffer(staging, frame_resources[i].ubo_scene, sizeof(scene_info_t), (void*)&scene_info, 0);
 
         VkImageMemoryBarrier barrier = {};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -210,14 +212,17 @@ void renderer_t::update_descriptors(scene_t& scene)
         VK_CHECK( vkAllocateCommandBuffers(context.device, &alloc, &frame_resources[i].cmd) );
         // todo: delete the buffer afterwards
     }
+    end_upload(staging); // uploaded to transfer
     end_and_submit_command_buffer(cmd, context.q_compute);
     VK_CHECK(wait_for_queue(context.q_compute));
+    VK_CHECK(wait_for_queue(context.q_transfer));
     vkFreeCommandBuffers(context.device, context.frames[0].command_pool, 1, &cmd); 
-    reset(staging);
 }
 
 renderer_t::~renderer_t()
-{   
+{
+    wait_idle(context);
+    LOG_INFO("Descructor renderer");
     for (auto& f : frame_resources)
     {
         destroy_buffer(context, f.ubo_light);
@@ -234,7 +239,7 @@ renderer_t::~renderer_t()
     vkDestroyDescriptorPool(context.device, descriptor_allocator.descriptor_pool, nullptr);
     destroy_pipeline(context, &graphics_pipeline);
     destroy_pipeline(context, &rtx_pipeline);
-    destroy_staging_buffer(staging);
+    //destroy_staging_buffer(staging);
     destroy_context(context);
 }
 
@@ -265,12 +270,12 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
     {
         auto pool = frame->command_pool;
         VK_CHECK( vkResetCommandPool(context.device, pool, 0) );
-        auto upload_cmd  = begin_one_time_command_buffer(context, pool);
 
+        begin_upload(staging);
         if (!mat_uploaded[frame_index])
         {
             // copy materials
-            copy_to_buffer(staging, upload_cmd, frame_resources[frame_index].sbo_material, scene.materials.size() * sizeof(material_t), (void*)scene.materials.data(), 0);
+            copy_to_buffer(staging, frame_resources[frame_index].sbo_material, scene.materials.size() * sizeof(material_t), (void*)scene.materials.data(), 0);
             // copy mesh_data
             u64 offset = 0;
             for (const auto& mesh : scene.meshes)
@@ -279,7 +284,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
                 md.material_index = -1; // todo
                 md.vertex_offset = mesh.vertex_offset;
                 md.index_offset = mesh.index_offset;
-                copy_to_buffer(staging, upload_cmd, frame_resources[frame_index].sbo_meshes, sizeof(mesh_metadata_t), (void*)&md, offset);
+                copy_to_buffer(staging, frame_resources[frame_index].sbo_meshes, sizeof(mesh_metadata_t), (void*)&md, offset);
                 offset += sizeof(mesh_metadata_t);
             }
             
@@ -291,7 +296,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         for (light_t light : scene.lights)
         {
             light.position = light.position;
-            copy_to_buffer(staging, upload_cmd, frame_resources[frame_index].ubo_light, sizeof(light_t), (void*)&light, offset_light);
+            copy_to_buffer(staging, frame_resources[frame_index].ubo_light, sizeof(light_t), (void*)&light, offset_light);
             offset_light += sizeof(light_t);
         }
        
@@ -302,7 +307,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         camera_data.proj = camera.m_proj;
         camera_data.inv_view = inverse(camera.m_view);
         camera_data.inv_proj = inverse(camera.m_proj);
-        copy_to_buffer(staging, upload_cmd, frame_resources[frame_index].ubo_camera, sizeof(camera_ubo_t), (void*)&camera_data, 0);
+        copy_to_buffer(staging, frame_resources[frame_index].ubo_camera, sizeof(camera_ubo_t), (void*)&camera_data, 0);
 
         // upload model data
         auto& meshes = scene.meshes;
@@ -320,12 +325,10 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             data.m_normal_model = inverse_transpose(camera.m_view * entity.m_model);
             data.material_index = entity.mesh_id; // todo: change
         }
-        copy_to_buffer(staging, upload_cmd, frame_resources[frame_index].ubo_model, model_data.size() * sizeof(model_t), (void*)model_data.data());
-
-        end_and_submit_command_buffer(upload_cmd, context.q_transfer);
-        VK_CHECK( wait_for_queue(context.q_transfer) );
-        vkFreeCommandBuffers(context.device, pool, 1, &upload_cmd);
-        reset(staging);
+        copy_to_buffer(staging, frame_resources[frame_index].ubo_model, model_data.size() * sizeof(model_t), (void*)model_data.data());
+        
+        VkSemaphore upload_complete;
+        end_upload(staging, &upload_complete);
     
         // begin recording commands
         VkCommandBuffer cmd = frame->command_buffer;
@@ -340,13 +343,14 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
 
         VK_CHECK( vkEndCommandBuffer(cmd) );
 
-        VkPipelineStageFlags dst_wait_mask = VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR;
+        VkPipelineStageFlags dst_wait_mask[2] = { VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR };
+        VkSemaphore wait_sempahores[2] = { frame->present_semaphore, upload_complete };
         VkSubmitInfo submit_info = {};
         submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submit_info.pNext = nullptr;
-        submit_info.waitSemaphoreCount = 1;
-        submit_info.pWaitSemaphores = &frame->present_semaphore;
-        submit_info.pWaitDstStageMask = &dst_wait_mask;
+        submit_info.waitSemaphoreCount = 2;
+        submit_info.pWaitSemaphores = wait_sempahores;
+        submit_info.pWaitDstStageMask = dst_wait_mask;
         submit_info.commandBufferCount = 1;
         submit_info.pCommandBuffers = &cmd;
         submit_info.signalSemaphoreCount = 1;
@@ -368,10 +372,10 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         vkCmdEndRenderPass(cmd);
         VK_CHECK( vkEndCommandBuffer(cmd) );
 
-        dst_wait_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        VkPipelineStageFlags _dst_wait_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
         submit_info.waitSemaphoreCount = 1;
         submit_info.pWaitSemaphores = &frame_resources[frame_index].rt_semaphore;
-        submit_info.pWaitDstStageMask = &dst_wait_mask;
+        submit_info.pWaitDstStageMask = &_dst_wait_mask;
         submit_info.signalSemaphoreCount = 1;
         submit_info.pSignalSemaphores = &frame->render_semaphore;
         submit_info.pCommandBuffers = &cmd;

@@ -138,7 +138,8 @@ void destroy_buffer(gpu_context_t& ctx, buffer_t& buffer);
 VkDeviceAddress get_buffer_device_address(gpu_context_t& ctx, VkBuffer buffer);
 
 VkCommandBuffer begin_one_time_command_buffer(gpu_context_t& ctx, VkCommandPool pool);
-void end_and_submit_command_buffer(VkCommandBuffer cmd, VkQueue queue);
+void end_and_submit_command_buffer(VkCommandBuffer cmd, VkQueue queue, VkSemaphore* wait_semaphore = nullptr, 
+        VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
 
 VkResult begin_command_buffer(VkCommandBuffer cmd);
 void begin_render_pass(gpu_context_t& ctx, VkCommandBuffer cmd, VkClearValue *clear, u32 clear_count); 
