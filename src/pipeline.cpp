@@ -577,6 +577,88 @@ bool build_shader_binding_table(gpu_context_t& context, rt_pipeline_description_
     return true;
 }
 
+void add_shader(compute_pipeline_description_t& description, std::string entry, const char* path)
+{
+    file_contents_t shader_code;
+    if (!read_file(path, &shader_code))
+    {
+        LOG_ERROR("Could not load shader code");
+    }
+
+    description.shader.entry = entry;
+    description.shader.code = std::vector<u8>(shader_code.contents, shader_code.contents + shader_code.size);
+    description.shader.stage = VK_SHADER_STAGE_COMPUTE_BIT;
+
+    // use reflection to get descriptors, push_constants and inputs/outputs
+    SpvReflectShaderModule module;
+    SpvReflectResult res;
+    res = spvReflectCreateShaderModule(shader_code.size, shader_code.contents, &module);
+    if (res != SPV_REFLECT_RESULT_SUCCESS)
+    {
+        LOG_FATAL("Coud not load spv reflect module");
+    }
+
+    u32 count = 0;
+    res = spvReflectEnumeratePushConstantBlocks(&module, &count, nullptr);
+    assert(res == SPV_REFLECT_RESULT_SUCCESS);
+    
+    std::vector<SpvReflectBlockVariable*> blocks(count);
+    res = spvReflectEnumeratePushConstantBlocks(&module, &count, blocks.data());
+    assert(res == SPV_REFLECT_RESULT_SUCCESS);
+
+    if (blocks.size() > 0)
+    {
+        auto& push_constants = description.push_constants;
+        auto& block = *(blocks[0]);
+        if (push_constants.size() == 0)
+        {
+            description.push_constants.resize(1, VkPushConstantRange{});
+            push_constants[0].stageFlags = static_cast<VkShaderStageFlagBits>(module.shader_stage);
+            push_constants[0].offset     = block.offset;
+            push_constants[0].size       = block.padded_size;
+        } 
+        else
+        {
+            push_constants[0].stageFlags |= static_cast<VkShaderStageFlagBits>(module.shader_stage);
+        }
+        LOG_INFO("push_constant size = %d", push_constants[0].size);
+    }
+}
+
+bool build_compute_pipeline(gpu_context_t& ctx, compute_pipeline_description_t& description, pipeline_t* pipeline)
+{
+    auto shader_module = load_shader(ctx.device, description.shader.code);
+    if (!shader_module)
+    {
+        LOG_ERROR("Failed to load shader module");
+        return false;
+    }
+
+    VkPipelineShaderStageCreateInfo shader_stage = {};
+    shader_stage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+    shader_stage.stage = description.shader.stage;
+    shader_stage.module = shader_module;
+    shader_stage.pName = description.shader.entry.data();
+
+    VkPipelineLayoutCreateInfo layout_info = {};
+    layout_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
+    layout_info.setLayoutCount = static_cast<u32>(description.descriptor_set_layouts.size());
+    layout_info.pSetLayouts = description.descriptor_set_layouts.data();
+    layout_info.pushConstantRangeCount = static_cast<u32>(description.push_constants.size());
+    layout_info.pPushConstantRanges = description.push_constants.data();
+    VK_CHECK( vkCreatePipelineLayout(ctx.device, &layout_info, nullptr, &pipeline->layout) );
+
+    VkComputePipelineCreateInfo create_info = {};
+    create_info.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
+    create_info.flags = 0;
+    create_info.stage = shader_stage;
+    create_info.layout = pipeline->layout;
+    create_info.basePipelineHandle = VK_NULL_HANDLE;
+
+    VK_CHECK( vkCreateComputePipelines(ctx.device, VK_NULL_HANDLE, 1, &create_info, nullptr, &pipeline->handle) );
+    vkDestroyShaderModule(ctx.device, shader_module, nullptr);
+}
+
 void destroy_pipeline(gpu_context_t& ctx, pipeline_t* pipeline)
 {
     if (pipeline)

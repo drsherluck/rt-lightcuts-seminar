@@ -35,6 +35,7 @@ struct renderer_t
     gpu_context_t          context;
     pipeline_t             graphics_pipeline;
     pipeline_t             rtx_pipeline;
+    pipeline_t             compute_pipeline;
     pipeline_t             post_pipeline;
     shader_binding_table_t sbt;
     staging_buffer_t       staging;

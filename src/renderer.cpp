@@ -98,6 +98,11 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
     }
 
     // create compute pipeline
+    {
+        compute_pipeline_description_t compute_description;
+        add_shader(compute_description, "main", "shaders/light_tree.comp.spv");
+        build_compute_pipeline(context, compute_description, &compute_pipeline);
+    }
     
     // create post-process pipeline(s)
     {
