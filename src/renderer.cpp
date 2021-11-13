@@ -7,6 +7,8 @@
 
 #define MAX_ENTITIES 100
 #define MAX_LIGHTS 1024 * 1024// 2^20
+#define MAX_TREE_HEIGTH 20
+#define MAX_LIGHT_TREE_SIZE 1024*1024*2  - 1// 2^(h + 1) - 1 = 2^21 - 1
 
 struct mesh_metadata_t
 {
@@ -21,6 +23,33 @@ struct scene_info_t
     u64 index_address;
 };
 
+struct batch_t 
+{
+    u32 instance_count;
+    u32 mesh_id;
+};
+
+struct push_constant_t
+{
+    m4x4 projection;
+    m4x4 view;
+    i32  num_lights;
+};
+
+struct encoded_light_t 
+{
+    u32 morton_code;
+    u32 index;
+};
+
+struct node_t
+{
+    v3 aabb_min; // 16 
+    f32 intensity;
+    v3 aabb_max; // 16
+    u32 id;
+};
+
 renderer_t::renderer_t(window_t* _window) : window(_window)
 {
     init_context(context, window);
@@ -32,7 +61,7 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
     
     // create descriptor layouts for pipelines
     // set 0 
-    set_layouts.resize(5);
+    set_layouts.resize(6);
     auto& layout_set0 = set_layouts[0];
     add_binding(layout_set0, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_RAYGEN_BIT_KHR);
     add_binding(layout_set0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
@@ -59,9 +88,15 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
     auto& layout_set4 = set_layouts[4];
     add_binding(layout_set4, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
     build_descriptor_set_layout(context.device, layout_set4);
+    // set 5 (tree builder)
+    auto& layout_set5 = set_layouts[5];
+    add_binding(layout_set5, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
+    add_binding(layout_set5, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
+    add_binding(layout_set5, 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
+    build_descriptor_set_layout(context.device, layout_set5);
     
     // create graphics pipeline
-    {
+    if (0) {
         pipeline_description_t pipeline_description;
         init_graphics_pipeline_description(context, pipeline_description);
         add_shader(pipeline_description, VK_SHADER_STAGE_VERTEX_BIT,   "main", "shaders/pbr.vert.spv");
@@ -121,6 +156,14 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
         compute_description.descriptor_set_layouts.push_back(layout_set4.handle);
         build_compute_pipeline(context, compute_description, &sort_compute_pipeline);
     }
+
+    // create tree builder pipeline
+    {
+        compute_pipeline_description_t compute_description;
+        add_shader(compute_description, "main", "shaders/light_tree.comp.spv");
+        compute_description.descriptor_set_layouts.push_back(layout_set5.handle);
+        build_compute_pipeline(context, compute_description, &tree_compute_pipeline);
+    }
     
     // create post-process pipeline(s)
     {
@@ -134,12 +177,6 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
         build_graphics_pipeline(context, post_pipeline_description, post_pipeline);
     }
 }
-
-struct encoded_light_t 
-{
-    u32 morton_code;
-    u32 index;
-};
 
 void renderer_t::update_descriptors(scene_t& scene)
 {
@@ -199,6 +236,14 @@ void renderer_t::update_descriptors(scene_t& scene)
         descriptor_set_t set4(set_layouts[4]);
         bind_buffer(set4, 0, &sbo_encoded_lights_info);
         frame_resources[i].descriptor_sets.push_back(build_descriptor_set(descriptor_allocator, set4));
+
+        create_buffer(context, MAX_LIGHT_TREE_SIZE * sizeof(node_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &frame_resources[i].sbo_light_tree);
+        VkDescriptorBufferInfo sbo_light_tree_info = { frame_resources[i].sbo_light_tree.handle, 0, VK_WHOLE_SIZE };
+        descriptor_set_t set5(set_layouts[5]);
+        bind_buffer(set5, 0, &ubo_light_info);
+        bind_buffer(set5, 1, &sbo_encoded_lights_info);
+        bind_buffer(set5, 2, &sbo_light_tree_info);
+        frame_resources[i].descriptor_sets.push_back(build_descriptor_set(descriptor_allocator, set5));
 
         // create sync objects (todo: move this)
         VkSemaphoreCreateInfo semaphore_info = {};
@@ -284,19 +329,6 @@ renderer_t::~renderer_t()
     destroy_context(context);
 }
 
-struct batch_t 
-{
-    u32 instance_count;
-    u32 mesh_id;
-};
-
-struct push_constant_t
-{
-    m4x4 projection;
-    m4x4 view;
-    i32  num_lights;
-};
-
 void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
 {
     static bool mat_uploaded[2] = {false, false};
@@ -377,21 +409,23 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         i32 num_lights = static_cast<i32>(scene.lights.size());
 
         // morton encoding
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, morton_compute_pipeline.handle);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, morton_compute_pipeline.layout, 0, 
-                1, &frame_resources[frame_index].descriptor_sets[3], 0, nullptr);
-        vkCmdDispatch(cmd, num_lights, 1, 1);
+        if (0) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, morton_compute_pipeline.handle);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, morton_compute_pipeline.layout, 0, 
+                    1, &frame_resources[frame_index].descriptor_sets[3], 0, nullptr);
+            vkCmdDispatch(cmd, num_lights, 1, 1);
 
-        // memory barrier to wait for finish morton encoding
-        VkMemoryBarrier barrier = {};
-        barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+            // memory barrier to wait for finish morton encoding
+            VkMemoryBarrier barrier = {};
+            barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+            barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+        }
 
         // bitonic sort lights
-        if (1) 
+        if (0) 
         {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, sort_compute_pipeline.handle);
             // todo: create descriptor set
@@ -420,6 +454,20 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         }
 
         // build light tree
+        if (0) {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, tree_compute_pipeline.handle);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, tree_compute_pipeline.layout, 0, 
+                    1, &frame_resources[frame_index].descriptor_sets[5], 0, nullptr);
+            u32 groups = static_cast<u32>(log2(num_lights)) + 1;
+            vkCmdDispatch(cmd, groups, 1, 1);
+
+            VkMemoryBarrier barrier = {};
+            barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+            barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+        }
 
         // render using light tree
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtx_pipeline.handle);
@@ -454,7 +502,9 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             cmd = frame_resources[frame_index].cmd;
             VK_CHECK( begin_command_buffer(cmd) ); 
             buffer_t local;
-            u32 size = sizeof(encoded_light_t) * scene.lights.size();
+            u32 h = static_cast<u32>(log2(scene.lights.size()));
+            u32 node_count = ((1 << (h + 1)) - 1);
+            u32 size = sizeof(node_t) *node_count;
             create_buffer(context, size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, &local,
                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
             
@@ -463,7 +513,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             copy.dstOffset = 0;
             copy.size = size;
            
-            vkCmdCopyBuffer(cmd, frame_resources[frame_index].sbo_encoded_lights.handle, local.handle, 1, &copy);
+            vkCmdCopyBuffer(cmd, frame_resources[frame_index].sbo_light_tree.handle, local.handle, 1, &copy);
             VK_CHECK( vkEndCommandBuffer(cmd) );
 
             VkPipelineStageFlags _dst_wait_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
@@ -479,23 +529,10 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
 
             u8* p_data;
             context.allocator.map_memory(local.allocation, (void**)&p_data);
-            auto* ptr = reinterpret_cast<encoded_light_t*>(p_data);
-            u32 last = ptr->morton_code;
-            bool sorted = true;
-            for (size_t i = 0; i < scene.lights.size(); i++)
+            auto* ptr = reinterpret_cast<node_t*>(p_data);
+            for (size_t i = 0; i < node_count; i++)
             {
-                u32 curr = ptr[i].morton_code;
-                if (last > curr)
-                {
-                    LOG_ERROR("last %d curr %d", last, curr);
-                    sorted = false;
-                    break;
-                }
-                last = curr;
-            }
-            if (!sorted)
-            {
-                LOG_ERROR("Failed to sort using bitonic sort");
+                LOG_INFO("node: id %d, I %f", ptr[i].id, ptr[i].intensity);
             }
             context.allocator.unmap_memory(local.allocation);
             abort();

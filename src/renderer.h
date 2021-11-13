@@ -23,6 +23,7 @@ struct frame_resource_t
     VkSampler storage_image_sampler;
 
     buffer_t sbo_encoded_lights;
+    buffer_t sbo_light_tree;
 
     // syncs
     VkFence rt_fence;
@@ -42,6 +43,7 @@ struct renderer_t
     // compute pipelines
     pipeline_t             morton_compute_pipeline;
     pipeline_t             sort_compute_pipeline;
+    pipeline_t             tree_compute_pipeline;
     shader_binding_table_t sbt;
     staging_buffer_t       staging;
 
