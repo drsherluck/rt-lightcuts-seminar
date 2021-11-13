@@ -19,9 +19,10 @@ struct descriptor_allocator_t
     VkDescriptorPool descriptor_pool;
 
     const std::vector<VkDescriptorPoolSize> pool_sizes = {
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 20},
-        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 20},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 50},
+        {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 50},
         {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 100},
+        {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, 10},
     };
 };
 

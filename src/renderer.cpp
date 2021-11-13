@@ -5,10 +5,11 @@
 
 #include <cassert>
 
+#define MAX_DESCRIPTOR_SETS 50
 #define MAX_ENTITIES 100
 #define MAX_LIGHTS 1024 * 1024// 2^20
 #define MAX_TREE_HEIGTH 20
-#define MAX_LIGHT_TREE_SIZE 1024*1024*2  - 1// 2^(h + 1) - 1 = 2^21 - 1
+#define MAX_LIGHT_TREE_SIZE 1024*1024*2// 2^(h + 1) - 1 = 2^21 - 1 (todo: adding -1 creates device lost error)
 
 struct mesh_metadata_t
 {
@@ -55,7 +56,7 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
     init_context(context, window);
     //staging = staging_buffer_t(&context);
     init_staging_buffer(staging, &context);
-    init_descriptor_allocator(context.device, 50, &descriptor_allocator);
+    init_descriptor_allocator(context.device, MAX_DESCRIPTOR_SETS,  &descriptor_allocator);
 
     //create_render_pass(context, &render_pass);
     
@@ -303,6 +304,7 @@ void renderer_t::update_descriptors(scene_t& scene)
     VK_CHECK(wait_for_queue(context.q_compute));
     VK_CHECK(wait_for_queue(context.q_transfer));
     vkFreeCommandBuffers(context.device, context.frames[0].command_pool, 1, &cmd); 
+    context.allocator.print_memory_usage();
 }
 
 renderer_t::~renderer_t()
@@ -409,7 +411,8 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         i32 num_lights = static_cast<i32>(scene.lights.size());
 
         // morton encoding
-        if (0) {
+        if (1) 
+        {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, morton_compute_pipeline.handle);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, morton_compute_pipeline.layout, 0, 
                     1, &frame_resources[frame_index].descriptor_sets[3], 0, nullptr);
@@ -425,7 +428,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         }
 
         // bitonic sort lights
-        if (0) 
+        if (1) 
         {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, sort_compute_pipeline.handle);
             // todo: create descriptor set
@@ -454,7 +457,8 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         }
 
         // build light tree
-        if (0) {
+        if (1) 
+        {
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, tree_compute_pipeline.handle);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, tree_compute_pipeline.layout, 0, 
                     1, &frame_resources[frame_index].descriptor_sets[5], 0, nullptr);
@@ -492,10 +496,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         submit_info.pSignalSemaphores = &frame_resources[frame_index].rt_semaphore;
 
         VK_CHECK( vkQueueSubmit(context.q_compute, 1, &submit_info, frame_resources[frame_index].rt_fence) );
-        //VK_CHECK( wait_for_queue(context.q_compute) );
 
-
-        // check if sorter sorted correctly
         if (0) 
         {
             // compute to local
