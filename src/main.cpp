@@ -14,7 +14,7 @@
 #define _randf() (((f32) rand()/(RAND_MAX)) + 1.0)
 #define _randf2() ((((f32) rand()/(RAND_MAX)) + 1.0) * (rand() % 2 ? -1.0 : 1.0))
 
-#define RANDOM_LIGHT_COUNT 3
+#define RANDOM_LIGHT_COUNT 8
 
 static void add_random_lights(scene_t& scene, u32 count, v3 origin, f32 max_distance)
 {

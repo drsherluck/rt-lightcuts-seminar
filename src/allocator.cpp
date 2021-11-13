@@ -185,8 +185,7 @@ void vk_allocator_t::allocate(allocation_type_t alloc_type,
 	}
 	// perform allocation
 	VkDeviceSize offset = (alloc->start + requirements.alignment - 1) & ~(requirements.alignment - 1);
-	VkDeviceSize next_size = (alloc->start + alloc->size) - (offset + requirements.size);
-	if (next_size <= 0)
+	if ((alloc->start + alloc->size) < (offset + requirements.size))
 	{
 		LOG_ERROR("allocation_t exceeds available sub allocation space");
 		// TODO Create new block 
@@ -194,6 +193,7 @@ void vk_allocator_t::allocate(allocation_type_t alloc_type,
 
 	// create new sub allocation from left over space
 	// and link old sub allocation with next sub allocation
+	VkDeviceSize next_size = (alloc->start + alloc->size) - (offset + requirements.size);
 	if (next_size > 0)
 	{
         allocation_count++;

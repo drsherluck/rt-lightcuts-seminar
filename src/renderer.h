@@ -22,6 +22,8 @@ struct frame_resource_t
     image_t  storage_image;
     VkSampler storage_image_sampler;
 
+    buffer_t sbo_encoded_lights;
+
     // syncs
     VkFence rt_fence;
     VkSemaphore rt_semaphore;
@@ -35,8 +37,11 @@ struct renderer_t
     gpu_context_t          context;
     pipeline_t             graphics_pipeline;
     pipeline_t             rtx_pipeline;
-    pipeline_t             compute_pipeline;
     pipeline_t             post_pipeline;
+    
+    // compute pipelines
+    pipeline_t             morton_compute_pipeline;
+    pipeline_t             sort_compute_pipeline;
     shader_binding_table_t sbt;
     staging_buffer_t       staging;
 

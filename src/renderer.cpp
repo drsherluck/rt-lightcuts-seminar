@@ -6,7 +6,7 @@
 #include <cassert>
 
 #define MAX_ENTITIES 100
-#define MAX_LIGHTS 1000000
+#define MAX_LIGHTS 1024 * 1024// 2^20
 
 struct mesh_metadata_t
 {
@@ -32,7 +32,7 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
     
     // create descriptor layouts for pipelines
     // set 0 
-    set_layouts.resize(3);
+    set_layouts.resize(5);
     auto& layout_set0 = set_layouts[0];
     add_binding(layout_set0, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_RAYGEN_BIT_KHR);
     add_binding(layout_set0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
@@ -50,6 +50,15 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
     auto& layout_set2 = set_layouts[2];
     add_binding(layout_set2, 0, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, VK_SHADER_STAGE_FRAGMENT_BIT);
     build_descriptor_set_layout(context.device, layout_set2);
+    // set 3 (morton_encode)
+    auto& layout_set3 = set_layouts[3];
+    add_binding(layout_set3, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
+    add_binding(layout_set3, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
+    build_descriptor_set_layout(context.device, layout_set3);
+    // set 4 (sort)
+    auto& layout_set4 = set_layouts[4];
+    add_binding(layout_set4, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
+    build_descriptor_set_layout(context.device, layout_set4);
     
     // create graphics pipeline
     {
@@ -97,11 +106,20 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
         build_shader_binding_table(context, rt_pipeline_description, rtx_pipeline, sbt);
     }
 
-    // create compute pipeline
+    // create morton encoder pipeline
     {
         compute_pipeline_description_t compute_description;
-        add_shader(compute_description, "main", "shaders/light_tree.comp.spv");
-        build_compute_pipeline(context, compute_description, &compute_pipeline);
+        add_shader(compute_description, "main", "shaders/morton_encode.comp.spv");
+        compute_description.descriptor_set_layouts.push_back(layout_set3.handle);
+        build_compute_pipeline(context, compute_description, &morton_compute_pipeline);
+    }
+
+    //create bitonic sort step pipeline
+    {
+        compute_pipeline_description_t compute_description;
+        add_shader(compute_description, "main", "shaders/bitonic_sort.comp.spv");
+        compute_description.descriptor_set_layouts.push_back(layout_set4.handle);
+        build_compute_pipeline(context, compute_description, &sort_compute_pipeline);
     }
     
     // create post-process pipeline(s)
@@ -116,6 +134,12 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
         build_graphics_pipeline(context, post_pipeline_description, post_pipeline);
     }
 }
+
+struct encoded_light_t 
+{
+    u32 morton_code;
+    u32 index;
+};
 
 void renderer_t::update_descriptors(scene_t& scene)
 {
@@ -163,6 +187,18 @@ void renderer_t::update_descriptors(scene_t& scene)
         descriptor_set_t set2(set_layouts[2]);
         bind_image(set2, 0, &storage_image_info);
         frame_resources[i].descriptor_sets.push_back(build_descriptor_set(descriptor_allocator, set2));
+
+        // (morton encode)
+        create_buffer(context, MAX_LIGHTS * sizeof(encoded_light_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &frame_resources[i].sbo_encoded_lights);
+        VkDescriptorBufferInfo sbo_encoded_lights_info = { frame_resources[i].sbo_encoded_lights.handle, 0, VK_WHOLE_SIZE };
+        descriptor_set_t set3(set_layouts[3]);
+        bind_buffer(set3, 0, &ubo_light_info);
+        bind_buffer(set3, 1, &sbo_encoded_lights_info);
+        frame_resources[i].descriptor_sets.push_back(build_descriptor_set(descriptor_allocator, set3));
+
+        descriptor_set_t set4(set_layouts[4]);
+        bind_buffer(set4, 0, &sbo_encoded_lights_info);
+        frame_resources[i].descriptor_sets.push_back(build_descriptor_set(descriptor_allocator, set4));
 
         // create sync objects (todo: move this)
         VkSemaphoreCreateInfo semaphore_info = {};
@@ -338,11 +374,57 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         // begin recording commands
         VkCommandBuffer cmd = frame->command_buffer;
         VK_CHECK( begin_command_buffer(cmd) );
-        
+        i32 num_lights = static_cast<i32>(scene.lights.size());
+
+        // morton encoding
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, morton_compute_pipeline.handle);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, morton_compute_pipeline.layout, 0, 
+                1, &frame_resources[frame_index].descriptor_sets[3], 0, nullptr);
+        vkCmdDispatch(cmd, num_lights, 1, 1);
+
+        // memory barrier to wait for finish morton encoding
+        VkMemoryBarrier barrier = {};
+        barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+        barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+
+        // bitonic sort lights
+        if (1) 
+        {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, sort_compute_pipeline.handle);
+            // todo: create descriptor set
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, sort_compute_pipeline.layout, 0, 
+                    1, &frame_resources[frame_index].descriptor_sets[4], 0, nullptr);
+            int n = num_lights;
+            int constants[2] = {0,0};
+            for (int k = 2; k <= n; k <<= 1) 
+            {
+                for (int j = k >> 1; j > 0; j >>= 1)
+                {
+                    constants[0] = j;
+                    constants[1] = k;
+                    vkCmdPushConstants(cmd, sort_compute_pipeline.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(i32) * 2, constants);
+                    vkCmdDispatch(cmd, n, 1, 1);
+
+                    // wait for prev to finish
+                    VkMemoryBarrier barrier = {};
+                    barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+                    barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                    vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+                }
+            }
+        }
+
+        // build light tree
+
+        // render using light tree
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtx_pipeline.handle);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtx_pipeline.layout, 0, 
                 2, &frame_resources[frame_index].descriptor_sets[0], 0, nullptr);
-        i32 num_lights = static_cast<i32>(scene.lights.size());
         vkCmdPushConstants(cmd, rtx_pipeline.layout, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 0, sizeof(i32), &num_lights);
         vkCmdTraceRays(cmd, &sbt.rgen, &sbt.miss, &sbt.hit, &sbt.call, context.swapchain.extent.width, context.swapchain.extent.height, 1);
 
@@ -362,6 +444,62 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         submit_info.pSignalSemaphores = &frame_resources[frame_index].rt_semaphore;
 
         VK_CHECK( vkQueueSubmit(context.q_compute, 1, &submit_info, frame_resources[frame_index].rt_fence) );
+        //VK_CHECK( wait_for_queue(context.q_compute) );
+
+
+        // check if sorter sorted correctly
+        if (0) 
+        {
+            // compute to local
+            cmd = frame_resources[frame_index].cmd;
+            VK_CHECK( begin_command_buffer(cmd) ); 
+            buffer_t local;
+            u32 size = sizeof(encoded_light_t) * scene.lights.size();
+            create_buffer(context, size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, &local,
+                VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+            
+            VkBufferCopy copy{};
+            copy.srcOffset = 0;
+            copy.dstOffset = 0;
+            copy.size = size;
+           
+            vkCmdCopyBuffer(cmd, frame_resources[frame_index].sbo_encoded_lights.handle, local.handle, 1, &copy);
+            VK_CHECK( vkEndCommandBuffer(cmd) );
+
+            VkPipelineStageFlags _dst_wait_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            submit_info.waitSemaphoreCount = 1;
+            submit_info.pWaitSemaphores = &frame_resources[frame_index].rt_semaphore;
+            submit_info.pWaitDstStageMask = &_dst_wait_mask;
+            submit_info.signalSemaphoreCount = 1;
+            submit_info.pSignalSemaphores = &frame->render_semaphore;
+            submit_info.pCommandBuffers = &cmd;
+
+            VK_CHECK( vkQueueSubmit(context.q_transfer, 1, &submit_info, frame->fence) ); 
+            VK_CHECK( wait_for_queue(context.q_transfer) );
+
+            u8* p_data;
+            context.allocator.map_memory(local.allocation, (void**)&p_data);
+            auto* ptr = reinterpret_cast<encoded_light_t*>(p_data);
+            u32 last = ptr->morton_code;
+            bool sorted = true;
+            for (size_t i = 0; i < scene.lights.size(); i++)
+            {
+                u32 curr = ptr[i].morton_code;
+                if (last > curr)
+                {
+                    LOG_ERROR("last %d curr %d", last, curr);
+                    sorted = false;
+                    break;
+                }
+                last = curr;
+            }
+            if (!sorted)
+            {
+                LOG_ERROR("Failed to sort using bitonic sort");
+            }
+            context.allocator.unmap_memory(local.allocation);
+            abort();
+        }
        
         cmd = frame_resources[frame_index].cmd;
         VK_CHECK( begin_command_buffer(cmd) ); // should be simultaneos
