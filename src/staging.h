@@ -3,7 +3,7 @@
 
 #include "backend.h"
 
-#define STAGING_DEFAULT_ALLOCATION_SIZE 16 * 1024 * 1024
+#define STAGING_DEFAULT_ALLOCATION_SIZE 64 * 1024 * 1024
 
 /* Essentially a linear allocator
  * that gets reset after uploading data everytime */
