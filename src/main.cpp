@@ -14,7 +14,7 @@
 #define _randf() (((f32) rand()/(RAND_MAX)) + 1.0)
 #define _randf2() ((((f32) rand()/(RAND_MAX)) + 1.0) * (rand() % 2 ? -1.0 : 1.0))
 
-#define RANDOM_LIGHT_COUNT 8
+#define RANDOM_LIGHT_COUNT (1 << 11) // fixme: renderer breaks at 2^12 and higher
 
 static void add_random_lights(scene_t& scene, u32 count, v3 origin, f32 max_distance)
 {
@@ -80,7 +80,7 @@ int main()
 
     camera.position = vec3(0, 2, 1);
     camera.lookat(vec3(0, 0, 4));
-
+    
     // render loop
     frame_time_t time;
     bool run = true;
