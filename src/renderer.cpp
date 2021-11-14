@@ -7,7 +7,7 @@
 #include <cassert>
 
 #define ENABLE_MORTON_ENCODE 1
-#define ENABLE_SORT_LIGHTS 1
+#define ENABLE_SORT_LIGHTS 0
 #define ENABLE_LIGHT_TREE 1
 #define ENABLE_RTX 1
 
@@ -262,7 +262,6 @@ void renderer_t::update_descriptors(scene_t& scene)
         for (size_t i = 0; i < frame_resources.size(); i++)
         {
             VK_CHECK( vkCreateSemaphore(context.device, &semaphore_info, nullptr, &frame_resources[i].rt_semaphore) );
-            VK_CHECK( vkCreateSemaphore(context.device, &semaphore_info, nullptr, &frame_resources[i].comp_semaphore) );
             VK_CHECK( vkCreateFence(context.device, &fence_info, nullptr, &frame_resources[i].rt_fence) );
         }
 
@@ -304,8 +303,6 @@ void renderer_t::update_descriptors(scene_t& scene)
         alloc.commandBufferCount = 1;
 
         VK_CHECK( vkAllocateCommandBuffers(context.device, &alloc, &frame_resources[i].cmd) );
-        VK_CHECK( vkAllocateCommandBuffers(context.device, &alloc, &frame_resources[i].comp_cmd) );
-        // todo: delete the buffer afterwards
     }
     end_upload(staging); // uploaded to transfer
     end_and_submit_command_buffer(cmd, context.q_compute);
@@ -385,13 +382,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         }
 
         // lights
-        u64 offset_light = 0;
-        for (light_t light : scene.lights)
-        {
-            light.position = light.position;
-            copy_to_buffer(staging, frame_resources[frame_index].ubo_light, sizeof(light_t), (void*)&light, offset_light);
-            offset_light += sizeof(light_t);
-        }
+        copy_to_buffer(staging, frame_resources[frame_index].ubo_light, sizeof(light_t) * scene.lights.size(), (void*)scene.lights.data(), 0);
        
         // upload camera data
         camera_ubo_t camera_data;
@@ -424,7 +415,8 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         end_upload(staging, &upload_complete);
     
         // begin recording commands
-        VkCommandBuffer cmd = frame_resources[frame_index].comp_cmd;
+        //VkCommandBuffer cmd = frame_resources[frame_index].comp_cmd;
+        VkCommandBuffer cmd = frame->command_buffer;
         VK_CHECK( begin_command_buffer(cmd) );
         i32 num_lights = static_cast<i32>(scene.lights.size());
 
@@ -504,32 +496,6 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
                     0, 1, &barrier, 0, nullptr, 0, nullptr);
             CHECKPOINT(cmd, "[POST] LIGHT TREE BUILD");
         }
-        VK_CHECK( vkEndCommandBuffer(cmd) );
-        {
-            VkPipelineStageFlags dst_wait_mask[2] = { VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT };
-            VkSemaphore wait_sempahores[2] = { frame->present_semaphore, upload_complete };
-            VkSubmitInfo submit_info = {};
-            submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-            submit_info.pNext = nullptr;
-            submit_info.waitSemaphoreCount = 2;
-            submit_info.pWaitSemaphores = wait_sempahores;
-            submit_info.pWaitDstStageMask = dst_wait_mask;
-            submit_info.commandBufferCount = 1;
-            submit_info.pCommandBuffers = &cmd;
-            submit_info.signalSemaphoreCount = 1;
-            submit_info.pSignalSemaphores = &frame_resources[frame_index].comp_semaphore;
-
-            VK_CHECK( vkQueueSubmit(context.q_compute, 1, &submit_info, nullptr) );
-            res = wait_for_queue(context.q_compute); // wait need no fence added yet
-            if (res != VK_SUCCESS)
-            {
-                PRINT_CHECKPOINT_STACK(context.q_compute);
-                VK_CHECK(res);
-            }
-        }
-
-        cmd = frame->command_buffer;
-        VK_CHECK( begin_command_buffer(cmd) );
 
         // render using light tree
         if (ENABLE_RTX)
@@ -545,11 +511,11 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
 
         VK_CHECK( vkEndCommandBuffer(cmd) );
         VkPipelineStageFlags dst_wait_mask[2] = { VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR };
-        VkSemaphore wait_sempahores[2] = {frame_resources[frame_index].comp_semaphore, 0};//{ frame->present_semaphore, upload_complete };
+        VkSemaphore wait_sempahores[2] = { frame->present_semaphore, upload_complete };
         VkSubmitInfo submit_info = {};
         submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submit_info.pNext = nullptr;
-        submit_info.waitSemaphoreCount = 1;
+        submit_info.waitSemaphoreCount = 2;
         submit_info.pWaitSemaphores = wait_sempahores;
         submit_info.pWaitDstStageMask = dst_wait_mask;
         submit_info.commandBufferCount = 1;
@@ -558,12 +524,6 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         submit_info.pSignalSemaphores = &frame_resources[frame_index].rt_semaphore;
 
         VK_CHECK( vkQueueSubmit(context.q_compute, 1, &submit_info, frame_resources[frame_index].rt_fence) );
-        res = wait_for_queue(context.q_compute);
-        if (res != VK_SUCCESS)
-        {
-            PRINT_CHECKPOINT_STACK(context.q_compute);
-            VK_CHECK(res);
-        }
 
         if (0) 
         {
