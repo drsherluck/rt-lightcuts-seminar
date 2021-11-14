@@ -111,7 +111,8 @@ void main()
 
     // limit lights to 1 sample for now
     vec3 temp_color = vec3(0);
-    for (int i = 0; i < num_lights; ++i)
+    int n = min(num_lights, 3);
+    for (int i = 0; i < n; ++i)
     {
         light_t light = lights[i];
         vec3 L = light.position - world_position;

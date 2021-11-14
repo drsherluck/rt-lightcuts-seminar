@@ -1,6 +1,5 @@
 #version 460
-#extension GL_EXT_shader_explicit_arithmetic_types_int32 : require
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
 struct light_t 
 {
     vec3 pos;
@@ -9,8 +8,8 @@ struct light_t
 
 struct encoded_light_t 
 {
-    uint32_t morton_code;
-    uint32_t index;
+    uint morton_code;
+    uint index;
 };
 
 layout(set = 0, binding = 0) readonly buffer lights_buffer
@@ -23,28 +22,39 @@ layout(set = 0, binding = 1) writeonly buffer out_buffer
     encoded_light_t encoded_lights[];
 };
 
-// taken from https://fgiesen.wordpress.com/2009/12/13/decoding-morton-codes/
-uint32_t part1by2(uint32_t x)
+layout(push_constant) uniform constants
 {
-    x &= 0x0000ffff;
-    x = (x ^ (x << 8)) & 0x00ff00ff;
-    x = (x ^ (x << 4)) & 0x0f0f0f0f;
-    x = (x ^ (x << 2)) & 0x33333333;
-    x = (x ^ (x << 1)) & 0x55555555;
+    int num_lights;
+};
+
+// taken from https://fgiesen.wordpress.com/2009/12/13/decoding-morton-codes/
+uvec3 part1by2(uvec3 x)
+{
+    x &= 0x000003ff;
+    x = (x ^ (x << 16)) & 0xff0000ff;
+    x = (x ^ (x << 8)) & 0x0300f00f;
+    x = (x ^ (x << 4)) & 0x030c30c3;
+    x = (x ^ (x << 2)) & 0x09249249;
     return x;
 }
 
-uint32_t encode_morton(uint32_t x, uint32_t y, uint32_t z)
+uint encode_morton(vec3 v)
 {
-   return (part1by2(z) << 2) + (part1by2(y) << 1) + part1by2(x);
+   uvec3 bits = part1by2(uvec3(v));
+   return (bits.z << 2) + (bits.y << 1) + bits.x;
 }
 
+layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
 void main()
 {
+    //uint i = gl_GlobalInvocationID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
     uint i = gl_GlobalInvocationID.x;
-    vec3 pos = lights[i].pos;
-    encoded_lights[i].morton_code = encode_morton(uint32_t(pos.x), uint32_t(pos.y), uint32_t(pos.z));
-    encoded_lights[i].index = i;
+    if (i < num_lights)
+    {
+        vec3 pos = lights[i].pos;
+        encoded_lights[i].morton_code = encode_morton(pos);
+        encoded_lights[i].index = i;
+    }
 }
 
 
