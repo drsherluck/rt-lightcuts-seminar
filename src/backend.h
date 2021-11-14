@@ -128,7 +128,7 @@ void create_render_pass(gpu_context_t& ctx, VkRenderPass* render_pass);
 VkResult create_descriptor_set_layout(gpu_context_t& ctx, u32 bind_count, VkDescriptorSetLayoutBinding *p_bindings, VkDescriptorSetLayout* layout);
 bool create_texture(gpu_context_t& ctx, u32 width, u32 height, texture_t* p_texture);
 bool create_image(gpu_context_t& ctx, VkImageType type, VkFormat format, u32 width, u32 height, VkImageUsageFlagBits usage, VkImageAspectFlags aspect_mask, image_t* p_image);
-void destroy_image(gpu_context_t& ctx, image_t* image);
+void destroy_image(gpu_context_t& ctx, image_t& image);
 bool create_sampler(gpu_context_t& ctx, VkFilter filter, VkSamplerAddressMode address_mode, VkSampler* p_sampler);
 
 bool create_buffer(gpu_context_t& ctx, u32 size, u32 usage, buffer_t* p_buffer, 

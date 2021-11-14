@@ -2,14 +2,20 @@
 #include "scene.h"
 #include "camera.h"
 #include "mesh.h" // material struct 
+#include "debug_util.h"
 
 #include <cassert>
 
+#define ENABLE_MORTON_ENCODE 1
+#define ENABLE_SORT_LIGHTS 1
+#define ENABLE_LIGHT_TREE 1
+#define ENABLE_RTX 1
+
 #define MAX_DESCRIPTOR_SETS 50
 #define MAX_ENTITIES 100
-#define MAX_LIGHTS 1024 * 1024// 2^20
 #define MAX_TREE_HEIGTH 20
-#define MAX_LIGHT_TREE_SIZE 1024*1024*2// 2^(h + 1) - 1 = 2^21 - 1 (todo: adding -1 creates device lost error)
+#define MAX_LIGHTS (1 << 20)
+#define MAX_LIGHT_TREE_SIZE (1 << 21)
 
 struct mesh_metadata_t
 {
@@ -256,6 +262,7 @@ void renderer_t::update_descriptors(scene_t& scene)
         for (size_t i = 0; i < frame_resources.size(); i++)
         {
             VK_CHECK( vkCreateSemaphore(context.device, &semaphore_info, nullptr, &frame_resources[i].rt_semaphore) );
+            VK_CHECK( vkCreateSemaphore(context.device, &semaphore_info, nullptr, &frame_resources[i].comp_semaphore) );
             VK_CHECK( vkCreateFence(context.device, &fence_info, nullptr, &frame_resources[i].rt_fence) );
         }
 
@@ -297,6 +304,7 @@ void renderer_t::update_descriptors(scene_t& scene)
         alloc.commandBufferCount = 1;
 
         VK_CHECK( vkAllocateCommandBuffers(context.device, &alloc, &frame_resources[i].cmd) );
+        VK_CHECK( vkAllocateCommandBuffers(context.device, &alloc, &frame_resources[i].comp_cmd) );
         // todo: delete the buffer afterwards
     }
     end_upload(staging); // uploaded to transfer
@@ -317,15 +325,24 @@ renderer_t::~renderer_t()
         destroy_buffer(context, f.ubo_camera);
         destroy_buffer(context, f.ubo_model);
         destroy_buffer(context, f.sbo_material);
+        destroy_buffer(context, f.sbo_meshes);
+        destroy_buffer(context, f.ubo_scene);
+        destroy_buffer(context, f.sbo_encoded_lights);
+        destroy_buffer(context, f.sbo_light_tree);
+
+        destroy_image(context, f.storage_image);
+        vkDestroySampler(context.device, f.storage_image_sampler, nullptr);
     }
 
+    LOG_INFO("Destroy set layouts");
     for (auto& l : set_layouts)
     {
         vkDestroyDescriptorSetLayout(context.device, l.handle, nullptr);
     }
 
     vkDestroyDescriptorPool(context.device, descriptor_allocator.descriptor_pool, nullptr);
-    destroy_pipeline(context, &graphics_pipeline);
+    LOG_INFO("Destroy pipelines");
+    //destroy_pipeline(context, &graphics_pipeline);
     destroy_pipeline(context, &rtx_pipeline);
     //destroy_staging_buffer(staging);
     destroy_context(context);
@@ -334,6 +351,7 @@ renderer_t::~renderer_t()
 void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
 {
     static bool mat_uploaded[2] = {false, false};
+    VkResult res;
 
     i32 frame_index;
     frame_t *frame;
@@ -406,17 +424,20 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         end_upload(staging, &upload_complete);
     
         // begin recording commands
-        VkCommandBuffer cmd = frame->command_buffer;
+        VkCommandBuffer cmd = frame_resources[frame_index].comp_cmd;
         VK_CHECK( begin_command_buffer(cmd) );
         i32 num_lights = static_cast<i32>(scene.lights.size());
 
         // morton encoding
-        if (1) 
+        if (ENABLE_MORTON_ENCODE) 
         {
+            CHECKPOINT(cmd, "[PRE] MORTON ENCODING");
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, morton_compute_pipeline.handle);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, morton_compute_pipeline.layout, 0, 
                     1, &frame_resources[frame_index].descriptor_sets[3], 0, nullptr);
-            vkCmdDispatch(cmd, num_lights, 1, 1);
+            vkCmdPushConstants(cmd, morton_compute_pipeline.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(i32), &num_lights);
+            u32 threads = u32(num_lights)/512;
+            vkCmdDispatch(cmd, threads, 1, 1);
 
             // memory barrier to wait for finish morton encoding
             VkMemoryBarrier barrier = {};
@@ -424,25 +445,32 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
             barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
             vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+                    VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+            CHECKPOINT(cmd, "[POST] MORTON ENCODING");
         }
 
         // bitonic sort lights
-        if (1) 
+        if (ENABLE_SORT_LIGHTS) 
         {
+            CHECKPOINT(cmd, "[PRE] BITONIC SORT");
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, sort_compute_pipeline.handle);
             // todo: create descriptor set
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, sort_compute_pipeline.layout, 0, 
                     1, &frame_resources[frame_index].descriptor_sets[4], 0, nullptr);
             int n = num_lights;
-            int constants[2] = {0,0};
+            struct constants_t
+            {
+                int j;
+                int k;
+            } constants;
+
             for (int k = 2; k <= n; k <<= 1) 
             {
                 for (int j = k >> 1; j > 0; j >>= 1)
                 {
-                    constants[0] = j;
-                    constants[1] = k;
-                    vkCmdPushConstants(cmd, sort_compute_pipeline.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(i32) * 2, constants);
+                    constants.j = j;
+                    constants.k = k;
+                    vkCmdPushConstants(cmd, sort_compute_pipeline.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants_t), &constants);
                     vkCmdDispatch(cmd, n, 1, 1);
 
                     // wait for prev to finish
@@ -454,11 +482,13 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
                             VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
                 }
             }
+            CHECKPOINT(cmd, "[POST] BITONIC SORT");
         }
 
         // build light tree
-        if (1) 
+        if (ENABLE_LIGHT_TREE) 
         {
+            CHECKPOINT(cmd, "[PRE] LIGHT TREE BUILD");
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, tree_compute_pipeline.handle);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, tree_compute_pipeline.layout, 0, 
                     1, &frame_resources[frame_index].descriptor_sets[5], 0, nullptr);
@@ -470,24 +500,56 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
             barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
             vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                    VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+                    VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 
+                    0, 1, &barrier, 0, nullptr, 0, nullptr);
+            CHECKPOINT(cmd, "[POST] LIGHT TREE BUILD");
+        }
+        VK_CHECK( vkEndCommandBuffer(cmd) );
+        {
+            VkPipelineStageFlags dst_wait_mask[2] = { VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT };
+            VkSemaphore wait_sempahores[2] = { frame->present_semaphore, upload_complete };
+            VkSubmitInfo submit_info = {};
+            submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submit_info.pNext = nullptr;
+            submit_info.waitSemaphoreCount = 2;
+            submit_info.pWaitSemaphores = wait_sempahores;
+            submit_info.pWaitDstStageMask = dst_wait_mask;
+            submit_info.commandBufferCount = 1;
+            submit_info.pCommandBuffers = &cmd;
+            submit_info.signalSemaphoreCount = 1;
+            submit_info.pSignalSemaphores = &frame_resources[frame_index].comp_semaphore;
+
+            VK_CHECK( vkQueueSubmit(context.q_compute, 1, &submit_info, nullptr) );
+            res = wait_for_queue(context.q_compute); // wait need no fence added yet
+            if (res != VK_SUCCESS)
+            {
+                PRINT_CHECKPOINT_STACK(context.q_compute);
+                VK_CHECK(res);
+            }
         }
 
+        cmd = frame->command_buffer;
+        VK_CHECK( begin_command_buffer(cmd) );
+
         // render using light tree
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtx_pipeline.handle);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtx_pipeline.layout, 0, 
-                2, &frame_resources[frame_index].descriptor_sets[0], 0, nullptr);
-        vkCmdPushConstants(cmd, rtx_pipeline.layout, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 0, sizeof(i32), &num_lights);
-        vkCmdTraceRays(cmd, &sbt.rgen, &sbt.miss, &sbt.hit, &sbt.call, context.swapchain.extent.width, context.swapchain.extent.height, 1);
+        if (ENABLE_RTX)
+        {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtx_pipeline.handle);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtx_pipeline.layout, 0, 
+                    2, &frame_resources[frame_index].descriptor_sets[0], 0, nullptr);
+            vkCmdPushConstants(cmd, rtx_pipeline.layout, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 0, sizeof(i32), &num_lights);
+            CHECKPOINT(cmd, "[PRE] RAY TRACE");
+            vkCmdTraceRays(cmd, &sbt.rgen, &sbt.miss, &sbt.hit, &sbt.call, context.swapchain.extent.width, context.swapchain.extent.height, 1);
+            CHECKPOINT(cmd, "[POST] RAY TRACE");
+        }
 
         VK_CHECK( vkEndCommandBuffer(cmd) );
-
         VkPipelineStageFlags dst_wait_mask[2] = { VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR };
-        VkSemaphore wait_sempahores[2] = { frame->present_semaphore, upload_complete };
+        VkSemaphore wait_sempahores[2] = {frame_resources[frame_index].comp_semaphore, 0};//{ frame->present_semaphore, upload_complete };
         VkSubmitInfo submit_info = {};
         submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submit_info.pNext = nullptr;
-        submit_info.waitSemaphoreCount = 2;
+        submit_info.waitSemaphoreCount = 1;
         submit_info.pWaitSemaphores = wait_sempahores;
         submit_info.pWaitDstStageMask = dst_wait_mask;
         submit_info.commandBufferCount = 1;
@@ -496,6 +558,12 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         submit_info.pSignalSemaphores = &frame_resources[frame_index].rt_semaphore;
 
         VK_CHECK( vkQueueSubmit(context.q_compute, 1, &submit_info, frame_resources[frame_index].rt_fence) );
+        res = wait_for_queue(context.q_compute);
+        if (res != VK_SUCCESS)
+        {
+            PRINT_CHECKPOINT_STACK(context.q_compute);
+            VK_CHECK(res);
+        }
 
         if (0) 
         {
@@ -540,7 +608,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         }
        
         cmd = frame_resources[frame_index].cmd;
-        VK_CHECK( begin_command_buffer(cmd) ); // should be simultaneos
+        VK_CHECK( begin_command_buffer(cmd) ); 
         VkClearValue clear[2];
         clear[0].color = {0, 0, 0, 0};
         clear[1].depthStencil = {1, 0};

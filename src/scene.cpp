@@ -145,6 +145,7 @@ void update_acceleration_structures(gpu_context_t& context, scene_t& scene)
 
 void destroy_scene(gpu_context_t& context, scene_t& scene)
 {
+    destroy_acceleration_structure_builder(scene.as_builder);
     vkDestroyAccelerationStructure(context.device, scene.tlas.handle, nullptr);
     destroy_buffer(context, scene.tlas.buffer);
     for (auto& b : scene.blas)

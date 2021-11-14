@@ -28,8 +28,10 @@ struct frame_resource_t
     // syncs
     VkFence rt_fence;
     VkSemaphore rt_semaphore;
+    VkSemaphore comp_semaphore;
 
     VkCommandBuffer cmd;
+    VkCommandBuffer comp_cmd;
 };
 
 struct renderer_t
