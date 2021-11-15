@@ -45,6 +45,7 @@ struct renderer_t
     // compute pipelines
     pipeline_t             morton_compute_pipeline;
     pipeline_t             sort_compute_pipeline;
+    pipeline_t             tree_leafs_compute_pipeline;
     pipeline_t             tree_compute_pipeline;
     shader_binding_table_t sbt;
     staging_buffer_t       staging;

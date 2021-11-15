@@ -1,0 +1,67 @@
+#version 460
+
+struct light_t
+{
+    vec3 pos;
+    vec3 color;
+};
+
+struct encoded_t
+{
+    uint code;
+    uint id;
+};
+
+struct node_t
+{
+    vec3 bbox_min;
+    float intensity;
+    vec3 bbox_max;
+    uint id;
+};
+
+
+layout(std430, set = 0, binding = 0) readonly buffer lights_buffer
+{
+    light_t lights[];
+};
+
+layout(std430, set = 0, binding = 1) readonly buffer encoded_buffer
+{
+    encoded_t encoded_lights[];
+};
+
+layout(std430, set = 0, binding = 2) writeonly buffer tree_buffer
+{
+    node_t nodes[];
+};
+
+layout(push_constant) uniform constants
+{
+    uint total_nodes; 
+};
+
+layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+    uint id = gl_GlobalInvocationID.x;
+    if (id < total_nodes)
+    {
+        node_t node;
+        node.id = id;
+   
+        light_t light = lights[encoded_lights[id].id]; 
+        node.intensity = light.color.x + light.color.y + light.color.z;
+        if (node.intensity > 0)
+        {
+            node.bbox_min = light.pos;
+            node.bbox_max = light.pos;
+        }
+        else 
+        {
+            node.bbox_min = vec3(-1e8);
+            node.bbox_max = vec3(1e8f);
+        }
+        nodes[id] = node;
+    }
+}

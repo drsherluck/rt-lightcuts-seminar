@@ -21,20 +21,11 @@ struct checkpoint_t
 
 class checkpoint_tracker_t
 {
+    SINGLETON(checkpoint_tracker_t);
 private:
-    checkpoint_tracker_t() {};
     std::vector<checkpoint_t> checkpoints;
 
 public:
-    checkpoint_tracker_t(checkpoint_tracker_t const&) = delete;
-    void operator=(checkpoint_tracker_t const&) = delete;
-
-    static checkpoint_tracker_t& get_instance()
-    {
-        static checkpoint_tracker_t instance;
-        return instance;
-    };
-
     void set_checkpoint(VkCommandBuffer cmd, const char* name)
     {
 #ifdef VK_DEBUG_CHECKPOINT_NV

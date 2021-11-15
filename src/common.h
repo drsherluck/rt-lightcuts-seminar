@@ -22,11 +22,12 @@ inline u64 align(u64 offset, u64 alignment)
     return (offset + alignment - 1) & ~(alignment - 1);
 }
 
-#define SINGELTON(class_name) \
+#define SINGLETON(class_name) \
     public: \
         class_name(class_name const&) = delete;\
         class_name& operator=(class_name const&) = delete;\
-        static class_name& get_instance() {\
+        static class_name& get_instance() \
+        {\
             static class_name instance;\
             return instance;\
         }\
