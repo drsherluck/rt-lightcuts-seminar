@@ -60,6 +60,7 @@ struct node_t
 renderer_t::renderer_t(window_t* _window) : window(_window)
 {
     init_context(context, window);
+    init_profiler(context.device, profiler);
     //staging = staging_buffer_t(&context);
     init_staging_buffer(staging, &context);
     init_descriptor_allocator(context.device, MAX_DESCRIPTOR_SETS,  &descriptor_allocator);
@@ -167,7 +168,7 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
     // create tree builder pipeline
     {
         compute_pipeline_description_t compute_description;
-        add_shader(compute_description, "main", "shaders/light_tree.comp.spv");
+        add_shader(compute_description, "main", "shaders/light_tree2.comp.spv");
         compute_description.descriptor_set_layouts.push_back(layout_set5.handle);
         build_compute_pipeline(context, compute_description, &tree_compute_pipeline);
     }
@@ -234,16 +235,22 @@ void renderer_t::update_descriptors(scene_t& scene)
 
         // (morton encode)
         create_buffer(context, MAX_LIGHTS * sizeof(encoded_light_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &frame_resources[i].sbo_encoded_lights);
+        // TODO FIX MEMORY ISSUES
+        buffer_t temp;
+        create_buffer(context, MAX_LIGHTS * sizeof(encoded_light_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &temp);
+
         VkDescriptorBufferInfo sbo_encoded_lights_info = { frame_resources[i].sbo_encoded_lights.handle, 0, VK_WHOLE_SIZE };
         descriptor_set_t set3(set_layouts[3]);
         bind_buffer(set3, 0, &ubo_light_info);
         bind_buffer(set3, 1, &sbo_encoded_lights_info);
         frame_resources[i].descriptor_sets.push_back(build_descriptor_set(descriptor_allocator, set3));
 
+        // (sorter)
         descriptor_set_t set4(set_layouts[4]);
         bind_buffer(set4, 0, &sbo_encoded_lights_info);
         frame_resources[i].descriptor_sets.push_back(build_descriptor_set(descriptor_allocator, set4));
 
+        // (tree builder)
         create_buffer(context, MAX_LIGHT_TREE_SIZE * sizeof(node_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &frame_resources[i].sbo_light_tree);
         VkDescriptorBufferInfo sbo_light_tree_info = { frame_resources[i].sbo_light_tree.handle, 0, VK_WHOLE_SIZE };
         descriptor_set_t set5(set_layouts[5]);
@@ -360,7 +367,6 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
     {
         auto pool = frame->command_pool;
         VK_CHECK( vkResetCommandPool(context.device, pool, 0) );
-
         begin_upload(staging);
         if (!mat_uploaded[frame_index])
         {
@@ -418,6 +424,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         //VkCommandBuffer cmd = frame_resources[frame_index].comp_cmd;
         VkCommandBuffer cmd = frame->command_buffer;
         VK_CHECK( begin_command_buffer(cmd) );
+        begin_timer(profiler, cmd);
         i32 num_lights = static_cast<i32>(scene.lights.size());
 
         // morton encoding
@@ -428,7 +435,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, morton_compute_pipeline.layout, 0, 
                     1, &frame_resources[frame_index].descriptor_sets[3], 0, nullptr);
             vkCmdPushConstants(cmd, morton_compute_pipeline.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(i32), &num_lights);
-            u32 threads = u32(num_lights)/512;
+            u32 threads = MAX(static_cast<u32>(num_lights)/512, 1);
             vkCmdDispatch(cmd, threads, 1, 1);
 
             // memory barrier to wait for finish morton encoding
@@ -437,7 +444,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
             barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
             vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                    VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+                     VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 0, 1, &barrier, 0, nullptr, 0, nullptr);
             CHECKPOINT(cmd, "[POST] MORTON ENCODING");
         }
 
@@ -484,8 +491,56 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, tree_compute_pipeline.handle);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, tree_compute_pipeline.layout, 0, 
                     1, &frame_resources[frame_index].descriptor_sets[5], 0, nullptr);
-            u32 groups = static_cast<u32>(log2(num_lights)) + 1;
-            vkCmdDispatch(cmd, groups, 1, 1);
+#if 0
+            u32 h = static_cast<u32>(log2(num_lights));
+            for (u32 i = 0; i < h + 1; i++)
+            {
+                struct 
+                {
+                    u32 level;
+                    u32 total_nodes;
+                    u32 start_id;
+                    u32 merge_count;
+                } constants;
+               
+                constants.level = i;
+                constants.total_nodes = (1 << i);
+                constants.start_id = (1 << (h + 1)) - (1 << (i + 1));
+                constants.merge_count = 1 << (h - i);
+                //LOG_INFO("level = %d, total_nodes = %d, start_id = %d, merge_count = %d", constants.level, constants.total_nodes, constants.start_id, constants.merge_count);
+                vkCmdPushConstants(cmd, tree_compute_pipeline.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
+                u32 groups = MAX(constants.total_nodes / 512, 1);
+                vkCmdDispatch(cmd, groups, 1, 1);
+            }
+#endif
+
+            u32 h = static_cast<u32>(log2(num_lights));
+            u32 total = (1 << (h + 1)) - 1;
+            u32 remaining_nodes = total;
+            u32 start_id = 0;
+            u32 dispatch_count = 0;
+            while (start_id < total)
+            {
+                struct 
+                {
+                    u32 height;
+                    u32 total_nodes;
+                    u32 start_id;
+                    u32 total;
+                } constants;
+
+                constants.height = h; // todo remove (not used)
+                constants.total_nodes = MIN(2048, remaining_nodes);
+                constants.start_id = start_id;//(1 << (h + 1)) - (1 << (i + 1));
+                constants.total = total;
+
+                vkCmdPushConstants(cmd, tree_compute_pipeline.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
+                u32 groups = MAX(constants.total_nodes / 512, 1);
+                vkCmdDispatch(cmd, groups, 1, 1);
+                remaining_nodes -= constants.total_nodes;
+                start_id += constants.total_nodes;
+                dispatch_count++;
+            }
 
             VkMemoryBarrier barrier = {};
             barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
@@ -509,6 +564,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             CHECKPOINT(cmd, "[POST] RAY TRACE");
         }
 
+        end_timer(profiler,cmd);
         VK_CHECK( vkEndCommandBuffer(cmd) );
         VkPipelineStageFlags dst_wait_mask[2] = { VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR };
         VkSemaphore wait_sempahores[2] = { frame->present_semaphore, upload_complete };
@@ -524,7 +580,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         submit_info.pSignalSemaphores = &frame_resources[frame_index].rt_semaphore;
 
         VK_CHECK( vkQueueSubmit(context.q_compute, 1, &submit_info, frame_resources[frame_index].rt_fence) );
-
+        //LOG_INFO("COMPUTE TIME %lf", get_results(profiler));
         if (0) 
         {
             // compute to local
@@ -561,7 +617,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             auto* ptr = reinterpret_cast<node_t*>(p_data);
             for (size_t i = 0; i < node_count; i++)
             {
-                LOG_INFO("node: id %d, I %f", ptr[i].id, ptr[i].intensity);
+               LOG_INFO("node: id %d, I %f", ptr[i].id, ptr[i].intensity);
             }
             context.allocator.unmap_memory(local.allocation);
             abort();

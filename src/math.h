@@ -130,6 +130,9 @@ union quat
 
 // section utility
 
+#define MAX(a, b) (a > b ? a : b)
+#define MIN(a, b) (a < b ? a : b)
+
 inline i32 mod(i32 k, i32 n)
 {
 	return (k %= n) < 0 ? k + n : k;

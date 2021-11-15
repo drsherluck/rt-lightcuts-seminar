@@ -12,12 +12,12 @@ struct encoded_light_t
     uint index;
 };
 
-layout(set = 0, binding = 0) readonly buffer lights_buffer
+layout(std430, set = 0, binding = 0) readonly buffer lights_buffer
 {
     light_t lights[];
 };
 
-layout(set = 0, binding = 1) writeonly buffer out_buffer
+layout(std430, set = 0, binding = 1) writeonly buffer out_buffer
 {
     encoded_light_t encoded_lights[];
 };
@@ -27,7 +27,7 @@ layout(push_constant) uniform constants
     int num_lights;
 };
 
-// taken from https://fgiesen.wordpress.com/2009/12/13/decoding-morton-codes/
+//https://fgiesen.wordpress.com/2009/12/13/decoding-morton-codes/
 uvec3 part1by2(uvec3 x)
 {
     x &= 0x000003ff;
@@ -38,16 +38,26 @@ uvec3 part1by2(uvec3 x)
     return x;
 }
 
+//https://developer.nvidia.com/blog/thinking-parallel-part-iii-tree-construction-gpu/
+uvec3 bit_expansion(uvec3 x)
+{
+    x = (x * 0x00010001u) & 0xff0000ffu;
+    x = (x * 0x00000101u) & 0x0f00f00fu;
+    x = (x * 0x00000011u) & 0xc30c30c3u;
+    x = (x * 0x00000005u) & 0x49249249u;
+    return x;
+}
+
 uint encode_morton(vec3 v)
 {
-   uvec3 bits = part1by2(uvec3(v));
-   return (bits.z << 2) + (bits.y << 1) + bits.x;
+    v = min(max(normalize(v)*1024.0f, 0.0f), 1023.0f);
+    uvec3 bits = bit_expansion(uvec3(v));
+    return (bits.z << 2) + (bits.y << 1) + bits.x;
 }
 
 layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
 void main()
 {
-    //uint i = gl_GlobalInvocationID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
     uint i = gl_GlobalInvocationID.x;
     if (i < num_lights)
     {

@@ -5,6 +5,7 @@
 #include "staging.h"
 #include "pipeline.h"
 #include "descriptor.h"
+#include "profiler.h"
 
 struct scene_t;
 struct camera_t;
@@ -30,13 +31,13 @@ struct frame_resource_t
     VkSemaphore rt_semaphore;
 
     VkCommandBuffer cmd;
-    VkCommandBuffer comp_cmd;
 };
 
 struct renderer_t
 {
     window_t*              window;
     gpu_context_t          context;
+    profiler_t             profiler;
     pipeline_t             graphics_pipeline;
     pipeline_t             rtx_pipeline;
     pipeline_t             post_pipeline;

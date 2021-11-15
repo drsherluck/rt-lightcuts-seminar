@@ -1,26 +1,25 @@
 #version 460
-#extension GL_EXT_shader_explicit_arithmetic_types_int32 : require
 
-
-struct light_t 
+struct light_t
 {
     vec3 pos;
     vec3 color;
 };
 
-struct encoded_light_t 
+struct encoded_t
 {
-    uint32_t morton_code;
-    uint32_t index;
+    uint code;
+    uint id;
 };
 
-struct node_t // 32 bytes
+struct node_t
 {
-    vec3 aabb_min; // alignment = 16
+    vec3 bbox_min;
     float intensity;
-    vec3 aabb_max;
+    vec3 bbox_max;
     uint id;
-}; 
+};
+
 
 layout(std430, set = 0, binding = 0) readonly buffer lights_buffer
 {
@@ -29,43 +28,40 @@ layout(std430, set = 0, binding = 0) readonly buffer lights_buffer
 
 layout(std430, set = 0, binding = 1) readonly buffer encoded_buffer
 {
-    encoded_light_t encoded_lights[];
+    encoded_t encoded_lights[];
 };
 
 layout(std430, set = 0, binding = 2) writeonly buffer tree_buffer
 {
-    node_t nodes[]; // 2^(h+1) - 1 nodes (h is amount levels)
+    node_t nodes[];
 };
 
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+layout(push_constant) uniform constants
+{
+    uint level;
+    uint total_nodes; // amount of nodes in the level
+    uint start_id;
+    uint merge_count;
+};
+
+layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
 void main()
 {
-    uint level = gl_GlobalInvocationID.x;
-    uint tree_height = gl_NumWorkGroups.x - 1;
-    uint node_count  = 1 << level;
-    uint nodes_below = (1 << (tree_height + 1)) - (1 << (level + 1));
-    uint merge_count = 1 << (tree_height - level);
-    
-    for (uint i = 0; i < node_count; i++)
+    if (gl_GlobalInvocationID.x < total_nodes - 1)
     {
-        uint index = i + nodes_below;
-        nodes[index].id = index;
-        nodes[index].intensity = 0;
-        nodes[index].aabb_min  = vec3(0);
-        nodes[index].aabb_max  = vec3(0);
-
-        uint skip = i * merge_count;
-        for (uint k = 0; k < merge_count; k++)
+        uint idx = gl_GlobalInvocationID.x + start_id;
+        nodes[idx].id = idx;
+   
+        uint merge_start_id = gl_GlobalInvocationID.x * merge_count;
+        uint merge_end_id = merge_start_id + merge_count;
+        for(uint i = merge_start_id; i < merge_end_id; i++)
         {
-            light_t light = lights[encoded_lights[k + skip].index];
-            if (light.color != vec3(0)) // bogus lights skipped 
+            light_t light = lights[encoded_lights[i].id];
+            if (light.color != vec3(0))
             {
-                nodes[index].intensity += 1.0;
-                nodes[index].aabb_min += vec3(-1000.0);//light.aabb_min;
-                nodes[index].aabb_max += vec3(1000.0);//light.aabb_max;
+                nodes[idx].intensity += 1.0;
+                // todo bboxes
             }
         }
     }
 }
-
-
