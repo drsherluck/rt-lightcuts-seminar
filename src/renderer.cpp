@@ -235,9 +235,6 @@ void renderer_t::update_descriptors(scene_t& scene)
 
         // (morton encode)
         create_buffer(context, MAX_LIGHTS * sizeof(encoded_light_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &frame_resources[i].sbo_encoded_lights);
-        // TODO FIX MEMORY ISSUES
-        buffer_t temp;
-        create_buffer(context, MAX_LIGHTS * sizeof(encoded_light_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &temp);
 
         VkDescriptorBufferInfo sbo_encoded_lights_info = { frame_resources[i].sbo_encoded_lights.handle, 0, VK_WHOLE_SIZE };
         descriptor_set_t set3(set_layouts[3]);
@@ -580,7 +577,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         submit_info.pSignalSemaphores = &frame_resources[frame_index].rt_semaphore;
 
         VK_CHECK( vkQueueSubmit(context.q_compute, 1, &submit_info, frame_resources[frame_index].rt_fence) );
-        //LOG_INFO("COMPUTE TIME %lf", get_results(profiler));
+        LOG_INFO("COMPUTE TIME %lf", get_results(profiler));
         if (0) 
         {
             // compute to local

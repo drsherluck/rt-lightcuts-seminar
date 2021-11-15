@@ -358,7 +358,7 @@ void init_context(gpu_context_t& ctx, window_t* window)
     load_extension_functions(ctx.device);
 	
 	// init allocator
-	ctx.allocator.init_allocator(ctx.device, ctx.physical_device);
+	ctx.allocator.init_allocator(ctx.device, ctx.physical_device, ctx.instance);
 	LOG_INFO("Gpu memory allocator initialized");
 
 	// create queues

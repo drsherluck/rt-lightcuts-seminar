@@ -1,8 +1,10 @@
+#define VMA_IMPLEMENTATION
 #include "allocator.h"
 #include "log.h"
 
 #include <cstdio>
 #include <assert.h>
+
 
 // log allocations and frees
 //#define VK_ALLOCATOR_LOG_EVENTS
@@ -30,18 +32,29 @@ static bool find_properties(const VkPhysicalDeviceMemoryProperties &mem_properti
 	return false;
 }
 
-void vk_allocator_t::init_allocator(VkDevice device, VkPhysicalDevice physical_device)
+void vk_allocator_t::init_allocator(VkDevice device, VkPhysicalDevice physical_device, VkInstance instance)
 {
+#ifndef USE_VMA
 	this->device = device;
 	this->physical_device = physical_device;
 	vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_properties);
 	vkGetPhysicalDeviceProperties(physical_device, &device_properties);
 	heaps.resize(memory_properties.memoryHeapCount);
+#else
+    VmaAllocatorCreateInfo allocator_info = {};
+    allocator_info.physicalDevice = physical_device;
+    allocator_info.device = device;
+    allocator_info.instance = instance;
+    allocator_info.flags = VMA_ALLOCATOR_CREATE_BUFFER_DEVICE_ADDRESS_BIT;
+    vmaCreateAllocator(&allocator_info, &vma);
+    LOG_INFO("USING VMA");
+#endif
 	LOG_INFO("Vulkan memory allocator initialized");
 }
 
 void vk_allocator_t::destroy_allocator()
 {
+#ifndef USE_VMA
 	for (size_t i = 0; i < heaps.size(); ++i)
 	{
 		// free linear allocations
@@ -55,11 +68,15 @@ void vk_allocator_t::destroy_allocator()
 			vkFreeMemory(device, heaps[i].non_linear[j].memory_handle, nullptr);
 		}
 	}
+#else
+    vmaDestroyAllocator(vma);
+#endif 
 	LOG_INFO("Vulkan memory freed");
 }
 
 void vk_allocator_t::allocate_buffer_memory(VkBuffer buffer, VkMemoryPropertyFlags flags, allocation_t& allocation)
 {
+#ifndef USE_VMA
 	VkMemoryRequirements memory_requirements;
 	vkGetBufferMemoryRequirements(device, buffer, &memory_requirements);
 	allocate(ALLOC_TYPE_BUFFER, memory_requirements, flags, allocation);
@@ -67,6 +84,18 @@ void vk_allocator_t::allocate_buffer_memory(VkBuffer buffer, VkMemoryPropertyFla
 	{
 		LOG_ERROR("Could not bind buffer to memory section");
 	}
+#else
+    VmaAllocationCreateInfo info = {};
+    info.flags = VMA_ALLOCATION_CREATE_STRATEGY_BEST_FIT_BIT;
+    info.requiredFlags = flags;
+    
+    VmaAllocationInfo alloc_info;
+    vmaAllocateMemoryForBuffer(vma, buffer, &info, &allocation._vma_alloc, &alloc_info);
+    vmaBindBufferMemory(vma, allocation._vma_alloc, buffer);
+    allocation.size = alloc_info.size;
+    allocation.offset = alloc_info.offset;
+    allocation.memory_handle = alloc_info.deviceMemory;
+#endif
 }
 
 void vk_allocator_t::allocate_image_memory(VkImage image, 
@@ -74,6 +103,7 @@ void vk_allocator_t::allocate_image_memory(VkImage image,
 		VkMemoryPropertyFlags flags, 
 		allocation_t& allocation)
 {
+#ifndef USE_VMA
 	VkMemoryRequirements memory_requirements;
 	vkGetImageMemoryRequirements(device, image, &memory_requirements);
 	allocation_type_t type = tiling == VK_IMAGE_TILING_OPTIMAL 
@@ -83,6 +113,18 @@ void vk_allocator_t::allocate_image_memory(VkImage image,
 	{
 		LOG_ERROR("Could not bind image to memory section");
 	}
+#else
+    VmaAllocationCreateInfo info = {};
+    info.flags = VMA_ALLOCATION_CREATE_STRATEGY_BEST_FIT_BIT;
+    info.requiredFlags = flags;
+    
+    VmaAllocationInfo alloc_info;
+    vmaAllocateMemoryForImage(vma, image, &info, &allocation._vma_alloc, &alloc_info);
+    vmaBindImageMemory(vma, allocation._vma_alloc, image);
+    allocation.size = alloc_info.size;
+    allocation.offset = alloc_info.offset;
+    allocation.memory_handle = alloc_info.deviceMemory;
+#endif 
 }
 
 void vk_allocator_t::allocate_new_block(u32 heap_index, u32 type_index, u32 required_size, block_t& block)
@@ -226,6 +268,7 @@ void vk_allocator_t::allocate(allocation_type_t alloc_type,
 
 void vk_allocator_t::dealloc(allocation_t& allocation)
 {
+#ifndef USE_VMA
 	std::vector<block_t>& pool = allocation.type == ALLOC_TYPE_IMAGE_OPTIMAL ?
 		heaps[allocation.heap_index].non_linear : heaps[allocation.heap_index].linear;
 
@@ -259,10 +302,14 @@ void vk_allocator_t::dealloc(allocation_t& allocation)
 		}
 	}
 	LOG_ERROR("Unkown allocation %ld, could not free given allocation", allocation.id);
+#else 
+    vmaFreeMemory(vma, allocation._vma_alloc);
+#endif
 }
 
 void vk_allocator_t::map_memory(allocation_t& alloc, void** pp_data)
 {
+#ifndef USE_VMA
 	std::vector<block_t>& pool = alloc.type == ALLOC_TYPE_IMAGE_OPTIMAL ?
 		heaps[alloc.heap_index].non_linear : heaps[alloc.heap_index].linear;
 
@@ -283,10 +330,14 @@ void vk_allocator_t::map_memory(allocation_t& alloc, void** pp_data)
             *pp_data = (u8*)block.p_mapped + alloc.offset;
         }
     }
+#else 
+    vmaMapMemory(vma, alloc._vma_alloc, pp_data);
+#endif 
 }
 
 void vk_allocator_t::unmap_memory(allocation_t& alloc)
 {
+#ifndef USE_VMA
 	VkMappedMemoryRange range{};
 	range.sType = VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE;
 	range.pNext = nullptr;
@@ -296,6 +347,9 @@ void vk_allocator_t::unmap_memory(allocation_t& alloc)
 
 	vkFlushMappedMemoryRanges(device, 1, &range);
 	//vkUnmapMemory(device, alloc.memory_handle);
+#else
+    vmaUnmapMemory(vma, alloc._vma_alloc);
+#endif
 }
 
 static void human_readable_bytes(u64 bytes, char buffer[10])

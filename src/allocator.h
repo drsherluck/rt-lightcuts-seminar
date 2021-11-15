@@ -6,6 +6,10 @@
 
 #include <vulkan/vulkan.h>
 #include <vector>
+#define USE_VMA
+#ifdef USE_VMA
+#include <vk_mem_alloc.h>
+#endif
 
 #define DEFAULT_ALLOCATION_SIZE 32 * 1024 * 1024 // 128 Mb
 #define DEFAULT_BLOCK_SIZE 524288 // 514 Kb
@@ -27,6 +31,9 @@ struct allocation_t
 	VkDeviceMemory    memory_handle;
 	VkDeviceSize      size;
 	VkDeviceSize      offset;
+#ifdef USE_VMA
+    VmaAllocation     _vma_alloc;
+#endif 
 };
 
 struct sub_allocation_t
@@ -75,7 +82,11 @@ struct vk_allocator_t
 
 	std::vector<heap_t> heaps;
 
-	void init_allocator(VkDevice device, VkPhysicalDevice physical_device);
+#ifdef USE_VMA
+    VmaAllocator vma;
+#endif 
+
+	void init_allocator(VkDevice device, VkPhysicalDevice physical_device, VkInstance instance);
 	void destroy_allocator();
     
     void allocate_new_block(u32 heap_index, u32 type_index, u32 required_size, block_t& block);

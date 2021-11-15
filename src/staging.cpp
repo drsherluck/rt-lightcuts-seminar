@@ -52,6 +52,7 @@ staging_buffer_t::~staging_buffer_t()
         VK_CHECK( vkWaitForFences(context->device, 1, &fence, VK_TRUE, ONE_SECOND_IN_NANOSECONDS) );
     }
     VK_CHECK( vkResetCommandPool(context->device, command_pool, 0) );
+    context->allocator.unmap_memory(buffer.allocation);
     destroy_buffer(*(context), buffer);
     vkDestroyFence(context->device, fence, nullptr);
     if (upload_complete)
