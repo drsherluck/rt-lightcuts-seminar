@@ -1,11 +1,9 @@
 #version 460
-#extension GL_EXT_shader_explicit_arithmetic_types_int32 : require
-layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
 struct encoded_light_t
 {
-    uint32_t morton_code;
-    uint32_t index;
+    uint morton_code;
+    uint index;
 };
 
 layout(set = 0, binding = 0) buffer lights_buffer
@@ -19,13 +17,14 @@ layout(push_constant) uniform constants
    int k;
 };
 
-void swap_elements(uint a, uint b)
+void swap_elements(inout uint a, inout uint b)
 {
     encoded_light_t temp = arr[a];
     arr[a] = arr[b];
     arr[b] = temp;
 };
 
+layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
 void main()
 {
     uint i = gl_GlobalInvocationID.x; 

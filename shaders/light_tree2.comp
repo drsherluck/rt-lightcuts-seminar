@@ -66,24 +66,25 @@ void main()
         uint level = get_msb(id + 1);
         uint level_id = id - ((1 << level) - 1);
         uint idx = level_id + (1 << (height + 1)) - (1 << (level + 1));
-        nodes[idx].id = idx;
    
         uint merge_count = (1 << (height - level));
         uint merge_start_id = level_id * merge_count;
         uint merge_end_id = merge_start_id + merge_count;
-#if 1
+
+        node_t node;
+        node.id = idx; // avoid to many random accesses (2x performance hit)
+        float intensity = 0;
         for(uint i = merge_start_id; i < merge_end_id; i++)
         {
-            light_t light = lights[encoded_lights[i].id]; // fixme
-            float intensity = light.color.x + light.color.y + light.color.z;
-            //float intensity = 1.0;
+            light_t light = lights[encoded_lights[i].id]; 
+            intensity = light.color.x + light.color.y + light.color.z;
             if (intensity > 0)
             {
-                nodes[idx].intensity += intensity;
-                nodes[idx].bbox_min = min(nodes[idx].bbox_min, vec3(-1e8));
-                nodes[idx].bbox_max = max(nodes[idx].bbox_max, vec3(1e8));
+                node.intensity += intensity;
+                node.bbox_min = min(node.bbox_min, vec3(-1e8));
+                node.bbox_max = max(node.bbox_max, vec3(1e8));
             }
         }
-#endif
+        nodes[idx] = node;
     }
 }

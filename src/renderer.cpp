@@ -7,9 +7,10 @@
 #include <cassert>
 
 #define ENABLE_MORTON_ENCODE 1
-#define ENABLE_SORT_LIGHTS 0
-#define ENABLE_LIGHT_TREE 1
-#define ENABLE_RTX 0
+#define ENABLE_SORT_LIGHTS 1
+#define ENABLE_LIGHT_TREE 0
+#define ENABLE_RTX 1
+#define ENABLE_VERIFY 0
 
 #define MAX_DESCRIPTOR_SETS 50
 #define MAX_ENTITIES 100
@@ -467,15 +468,17 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
                 int j;
                 int k;
             } constants;
-
+    
+            u32 threads = MAX(n/512, 1);
             for (int k = 2; k <= n; k <<= 1) 
             {
                 for (int j = k >> 1; j > 0; j >>= 1)
                 {
                     constants.j = j;
                     constants.k = k;
+//                    LOG_INFO("k = %d, j = %d, threads = %d", k, j, n);
                     vkCmdPushConstants(cmd, sort_compute_pipeline.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants_t), &constants);
-                    vkCmdDispatch(cmd, n, 1, 1);
+                    vkCmdDispatch(cmd, threads, 1, 1);
 
                     // wait for prev to finish
                     VkMemoryBarrier barrier = {};
@@ -583,9 +586,10 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         submit_info.pSignalSemaphores = &frame_resources[frame_index].rt_semaphore;
 
         VK_CHECK( vkQueueSubmit(context.q_compute, 1, &submit_info, frame_resources[frame_index].rt_fence) );
-        LOG_INFO("COMPUTE TIME %lf", get_results(profiler));
-        if (1) 
+
+        if (ENABLE_VERIFY) 
         {
+            LOG_INFO("COMPUTE TIME %lf", get_results(profiler));
             // compute to local
             cmd = frame_resources[frame_index].cmd;
             VK_CHECK( begin_command_buffer(cmd) ); 
