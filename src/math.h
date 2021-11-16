@@ -154,8 +154,19 @@ inline f32 clamp(f32 value, f32 min_value, f32 max_value)
         return min_value;
     }
     return value;
-    //return fmin(max_value, fmax(min_value, value));
 }
+
+inline u32 next_pow2(u32 v)
+{
+    v--;
+    v |= v >> 1;
+    v |= v >> 2;
+    v |= v >> 4;
+    v |= v >> 8;
+    v |= v >> 16;
+    v++;
+    return v;
+};
 
 // section: v2 
 

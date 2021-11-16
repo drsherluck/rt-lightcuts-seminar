@@ -14,7 +14,7 @@
 #define _randf() (((f32) rand()/(RAND_MAX)) + 1.0)
 #define _randf2() ((((f32) rand()/(RAND_MAX)) + 1.0) * (rand() % 2 ? -1.0 : 1.0))
 
-#define RANDOM_LIGHT_COUNT (1 << 17) // 17 is around 100000 lights (sorting worse after this)
+#define RANDOM_LIGHT_COUNT 100000//(1 << 17) // 17 is around 100000 lights (sorting worse after this)
 
 static void add_random_lights(scene_t& scene, u32 count, v3 origin, f32 max_distance)
 {
@@ -63,7 +63,10 @@ int main()
         add_entity(scene, 0, 0, translate4x4(0, 0, 4));
         add_entity(scene, 0, 0, translate4x4(0, 1, 4) * scale4x4(0.5) * rotate4x4_y(radians(45)));
         add_entity(scene, 1, 1, translate4x4(0, -0.5, 4) * scale4x4(2));
-        add_random_lights(scene, RANDOM_LIGHT_COUNT, vec3(0,0,4), 10);
+        add_light(scene, vec3(1,0,0), vec3(1,1,0));
+        add_light(scene, vec3(1,1,1), vec3(1));
+        add_light(scene, vec3(0), vec3(1,0,0));
+        //add_random_lights(scene, RANDOM_LIGHT_COUNT, vec3(0,0,4), 10);
 
         std::sort(std::begin(scene.entities), std::end(scene.entities),
                 [](const entity_t& a, const entity_t& b) 

@@ -47,11 +47,12 @@ void main()
     uint id = gl_GlobalInvocationID.x;
     if (id < total_nodes)
     {
+        uint idx = encoded_lights[id].id;
+        light_t light = lights[idx]; 
+
         node_t node;
-        node.id = id;
-   
-        light_t light = lights[encoded_lights[id].id]; 
-        node.intensity = 1.0;//light.color.x + light.color.y + light.color.z;
+        node.id = idx;
+        node.intensity = light.color.x + light.color.y + light.color.z;
         if (node.intensity > 0)
         {
             node.bbox_min = light.pos;

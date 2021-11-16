@@ -432,6 +432,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         VK_CHECK( begin_command_buffer(cmd) );
         begin_timer(profiler, cmd);
         i32 num_lights = static_cast<i32>(scene.lights.size());
+        i32 num_leaf_nodes = num_lights; // will be modified at bitonic sort
 
         // morton encoding
         if (ENABLE_MORTON_ENCODE) 
@@ -459,24 +460,28 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         {
             CHECKPOINT(cmd, "[PRE] BITONIC SORT");
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, sort_compute_pipeline.handle);
-            // todo: create descriptor set
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, sort_compute_pipeline.layout, 0, 
                     1, &frame_resources[frame_index].descriptor_sets[4], 0, nullptr);
-            int n = num_lights;
+
+            // add dummy nodes to get to power of 2
+            num_leaf_nodes = next_pow2(num_lights);
+            LOG_INFO("%d dummy nodes added", num_leaf_nodes - num_lights);
             struct constants_t
             {
                 int j;
                 int k;
+                int num_lights;
             } constants;
     
-            u32 threads = MAX(n/512, 1);
-            for (int k = 2; k <= n; k <<= 1) 
+            u32 threads = MAX(num_leaf_nodes/512, 1);
+            constants.num_lights = num_lights;
+            for (int k = 2; k <= num_leaf_nodes; k <<= 1) 
             {
                 for (int j = k >> 1; j > 0; j >>= 1)
                 {
                     constants.j = j;
                     constants.k = k;
-//                    LOG_INFO("k = %d, j = %d, threads = %d", k, j, n);
+                    LOG_INFO("k = %d, j = %d, threads = %d", k, j, threads);
                     vkCmdPushConstants(cmd, sort_compute_pipeline.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants_t), &constants);
                     vkCmdDispatch(cmd, threads, 1, 1);
 
@@ -513,7 +518,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             // each level waits for previous level to be processed and every node in a dispatch is computed in parrallel
             // this is better than creating all levels at once and merging from the leaf nodes directly because of cache 
             //  (nodes at the top are at the end of the array while leaf nodes are at the start)
-            u32 h = static_cast<u32>(log2(num_lights));
+            u32 h = static_cast<u32>(log2(num_leaf_nodes));
             u32 src_lvl = 0;
             for (u32 dst_lvl = 1; dst_lvl <= h; dst_lvl++)
             {
@@ -535,7 +540,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
                 constants.start_id     = ((1 << (h - src_lvl + 1)) - 1) - (1 << (h - src_lvl)) - constants.total_nodes;
                 constants.src_level    = h - src_lvl;
     
-                LOG_INFO("level %d to %d, nodes = %d", h - src_lvl, h - dst_lvl, constants.total_nodes);
+               // LOG_INFO("level %d to %d, nodes = %d", h - src_lvl, h - dst_lvl, constants.total_nodes);
                 
                 // wait for previous level to finish
                 VkMemoryBarrier barrier = {};
@@ -599,7 +604,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             cmd = frame_resources[frame_index].cmd;
             VK_CHECK( begin_command_buffer(cmd) ); 
             buffer_t local;
-            u32 h = static_cast<u32>(log2(scene.lights.size()));
+            u32 h = static_cast<u32>(log2(num_leaf_nodes));
             u32 node_count = ((1 << (h + 1)) - 1);
             u32 size = sizeof(node_t) *node_count;
             create_buffer(context, size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, &local,
@@ -627,13 +632,14 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             u8* p_data;
             context.allocator.map_memory(local.allocation, (void**)&p_data);
             auto* ptr = reinterpret_cast<node_t*>(p_data);
-#if 0
+#if 1
             for (size_t i = 0; i < node_count; i++)
             {
                LOG_INFO("node: id %d, I %f", ptr[i].id, ptr[i].intensity);
             }
 #endif
-            assert(ptr[node_count - 1].intensity == (1 << h));
+            // if we set intensity = 1 to every light
+            assert(ptr[node_count - 1].intensity == (1 << h)); 
             context.allocator.unmap_memory(local.allocation);
             abort();
         }
