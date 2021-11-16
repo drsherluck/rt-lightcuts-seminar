@@ -177,7 +177,7 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
     // create tree builder pipeline
     {
         compute_pipeline_description_t compute_description;
-        add_shader(compute_description, "main", "shaders/light_tree2.comp.spv");
+        add_shader(compute_description, "main", "shaders/light_tree.comp.spv");
         compute_description.descriptor_set_layouts.push_back(layout_set5.handle);
         build_compute_pipeline(context, compute_description, &tree_compute_pipeline);
     }
@@ -504,42 +504,11 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             u32 threads = MAX(1, leaf_nodes/512);
             vkCmdDispatch(cmd, threads, 1, 1);
 
-
-
             CHECKPOINT(cmd, "[PRE] LIGHT TREE BUILD");
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, tree_compute_pipeline.handle);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, tree_compute_pipeline.layout, 0, 
                     1, &frame_resources[frame_index].descriptor_sets[5], 0, nullptr);
-#if 0
-            u32 h = static_cast<u32>(log2(num_lights));
-            u32 total = (1 << (h + 1)) - 1 - (1 << (h)); // skip leaf nodes
-            u32 remaining_nodes = total;
-            u32 start_id = 0;
-            u32 dispatch_count = 0;
-            while (start_id < total)
-            {
-                struct 
-                {
-                    u32 height;
-                    u32 total_nodes;
-                    u32 start_id;
-                    u32 total;
-                } constants;
 
-                constants.height = h; // todo remove (not used)
-                constants.total_nodes = MIN(2048, remaining_nodes);
-                constants.start_id = start_id;//(1 << (h + 1)) - (1 << (i + 1));
-                constants.total = total;
-
-                vkCmdPushConstants(cmd, tree_compute_pipeline.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
-                u32 groups = MAX(constants.total_nodes / 512, 1);
-                vkCmdDispatch(cmd, groups, 1, 1);
-                remaining_nodes -= constants.total_nodes;
-                start_id += constants.total_nodes;
-                dispatch_count++;
-            }
-            LOG_INFO("dispatched %d", dispatch_count);
-#else  
             // bottom up
             // each level waits for previous level to be processed and every node in a dispatch is computed in parrallel
             // this is better than creating all levels at once and merging from the leaf nodes directly because of cache 
@@ -583,7 +552,6 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
                 
                 src_lvl = dst_lvl;
             }
-#endif 
 
             VkMemoryBarrier barrier = {};
             barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;

@@ -31,37 +31,59 @@ layout(std430, set = 0, binding = 1) readonly buffer encoded_buffer
     encoded_t encoded_lights[];
 };
 
-layout(std430, set = 0, binding = 2) writeonly buffer tree_buffer
+layout(std430, set = 0, binding = 2) buffer tree_buffer
 {
     node_t nodes[];
 };
 
 layout(push_constant) uniform constants
 {
-    uint level;
-    uint total_nodes; // amount of nodes in the level
-    uint start_id;
-    uint merge_count;
+    uint height;       // 2^h = number of leaf nodes
+    uint total_nodes;  // #nodes being processed by dispatch
+    uint start_id;     // offset for calculating id (where root = 0) and level
+    uint src_level;    // the level we are merging our nodes from
+    uint src_start_id; // the start id (in terms of nodes array index) of the src level
 };
+
+// https://graphics.stanford.edu/~seander/bithacks.html#IntegerLog
+uint get_msb(uint v)
+{
+    uint r;
+    uint shift;
+    r = uint(v > 0xFFFF) << 4; v >>= r;
+    shift = uint(v > 0xFF) << 3; v >>= shift; r |= shift;
+    shift = uint(v > 0xF ) << 2; v >>= shift; r |= shift;
+    shift = uint(v > 0x3 ) << 1; v >>= shift; r |= shift;
+    r |= (v >> 1);
+    return r;
+}
 
 layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
 void main()
 {
-    if (gl_GlobalInvocationID.x < total_nodes - 1)
+    if (gl_GlobalInvocationID.x < total_nodes)
     {
-        uint idx = gl_GlobalInvocationID.x + start_id;
-        nodes[idx].id = idx;
+        uint id = gl_GlobalInvocationID.x + start_id;
+        uint level    = get_msb(id + 1);
+        uint level_id = id - ((1 << level) - 1); // [0, number of nodes in level)
+        uint idx      = level_id + (1 << (height + 1)) - (1 << (level + 1)); 
    
-        uint merge_start_id = gl_GlobalInvocationID.x * merge_count;
-        uint merge_end_id = merge_start_id + merge_count;
-        for(uint i = merge_start_id; i < merge_end_id; i++)
+        uint merge_count    = (1 << (src_level - level));
+        uint merge_start_id = src_start_id + level_id * merge_count;
+        uint merge_end_id   = merge_start_id + merge_count;
+
+        node_t node = nodes[merge_start_id];
+        node.id = idx; 
+        for(uint i = merge_start_id + 1; i < merge_end_id; i++)
         {
-            light_t light = lights[encoded_lights[i].id];
-            if (light.color != vec3(0))
+            node_t n = nodes[i];
+            if (n.intensity > 0)
             {
-                nodes[idx].intensity += 1.0;
-                // todo bboxes
+                node.intensity += n.intensity;
+                node.bbox_min = min(node.bbox_min, n.bbox_min);
+                node.bbox_max = max(node.bbox_max, n.bbox_max);
             }
         }
+        nodes[idx] = node;
     }
 }
