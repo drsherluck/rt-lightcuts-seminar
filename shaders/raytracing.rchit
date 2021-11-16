@@ -1,37 +1,19 @@
-#version 460 core
+#version 460 
+#extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_ray_tracing : enable
 #extension GL_EXT_nonuniform_qualifier : require
 #extension GL_EXT_scalar_block_layout : require
-
 #extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
 #extension GL_EXT_buffer_reference2 : enable
+
+#define GLSL_EXT_64
+#include "../src/shader_data.h"
 
 struct vertex_t
 {
     vec3 pos;
     vec3 normal;
     vec2 uv;
-};
-
-struct light_t
-{
-    vec3 position;
-    vec3 color;
-};
-
-struct material
-{
-    vec3 base_color;
-    float roughness;
-    float metalness;
-    float emissive;
-};
-
-struct mesh_info
-{
-    int material_index;
-    uint index_offset;
-    uint vertex_offset;
 };
 
 struct model_data
@@ -53,12 +35,12 @@ layout(set = 0, binding = 2) readonly buffer model_sbo
 
 layout(set = 0, binding = 3) readonly buffer material_sbo
 {
-    material materials[];
+    material_t materials[];
 };
 
 layout(set = 0, binding = 4) readonly buffer mesh_buffer
 {
-    mesh_info meshes[];
+    mesh_info_t meshes[];
 };
 
 layout(buffer_reference, scalar) readonly buffer vertex_buffer 
@@ -72,11 +54,10 @@ layout(buffer_reference, scalar) readonly buffer index_buffer
 };
 
 layout(set = 1, binding = 0) uniform accelerationStructureEXT tlas;
-layout(set = 1, binding = 1) uniform scene_buffer
+layout(set = 1, binding = 1) uniform scene_ubo 
 {
-    uint64_t vertex_address;
-    uint64_t index_address;
-} scene;
+    scene_info_t scene;
+};
 
 layout(push_constant) uniform constants
 {
@@ -94,7 +75,7 @@ void main()
     index_buffer  ibo = index_buffer(scene.index_address);
 
     model_data md = models[gl_InstanceCustomIndexEXT];
-    mesh_info info = meshes[md.mesh_index];
+    mesh_info_t info = meshes[md.mesh_index];
     const uint idx = uint(info.index_offset) + 3 * gl_PrimitiveID;
     uvec3 triangle = uvec3(ibo.indices[idx + 0], ibo.indices[idx + 1], ibo.indices[idx + 2]) + uvec3(info.vertex_offset);
     const vec3 barycenter = vec3(1.0 - attribs.x - attribs.y, attribs.x, attribs.y);
@@ -115,7 +96,7 @@ void main()
     for (int i = 0; i < n; ++i)
     {
         light_t light = lights[i];
-        vec3 L = light.position - world_position;
+        vec3 L = light.pos - world_position;
         float distance = length(L);
         L /= distance;
 

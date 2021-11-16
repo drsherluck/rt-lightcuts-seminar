@@ -4,11 +4,11 @@
 #include "math.h"
 #include "backend.h"
 #include "acceleration_struct.h"
+#include "shader_data.h"
 
 #include <vector>
 
 struct mesh_data_t;
-struct material_t;
 
 struct entity_t
 {
@@ -24,39 +24,9 @@ struct mesh_t
     u32      index_offset;
     u32      vertex_count;
     u32      vertex_offset;
-
     // todo: remove these
     VkBuffer vbo;
     VkBuffer ibo;
-};
-
-struct prefab_t
-{
-    u32 mesh_id;
-    i32 material_index;
-};
-
-struct light_t
-{
-    aligned_v3 position;
-    aligned_v3 color;
-};
-
-struct model_t
-{
-    i32  material_index;
-    f32 _p[3];
-    m4x4 m_model;
-    m4x4 m_normal_model; 
-};
-
-struct camera_ubo_t 
-{
-    aligned_v3 position;
-    m4x4 view;
-    m4x4 proj;
-    m4x4 inv_view;
-    m4x4 inv_proj;
 };
 
 struct scene_t

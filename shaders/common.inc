@@ -1,4 +1,6 @@
 
+const float PI = 3.1415926535;
+
 // https://graphics.stanford.edu/~seander/bithacks.html#IntegerLog
 uint get_msb(uint v)
 {

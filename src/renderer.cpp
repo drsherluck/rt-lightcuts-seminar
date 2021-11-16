@@ -3,6 +3,7 @@
 #include "camera.h"
 #include "mesh.h" // material struct 
 #include "debug_util.h"
+#include "shader_data.h"
 
 #include <cassert>
 
@@ -18,44 +19,11 @@
 #define MAX_LIGHTS (1 << 20)
 #define MAX_LIGHT_TREE_SIZE (1 << 21)
 
-struct mesh_metadata_t
-{
-    i32 material_index;
-    u32 index_offset;
-    u32 vertex_offset;
-};
-
-struct scene_info_t
-{
-    u64 vertex_address;
-    u64 index_address;
-};
-
+// todo: remove
 struct batch_t 
 {
     u32 instance_count;
     u32 mesh_id;
-};
-
-struct push_constant_t
-{
-    m4x4 projection;
-    m4x4 view;
-    i32  num_lights;
-};
-
-struct encoded_light_t 
-{
-    u32 morton_code;
-    u32 index;
-};
-
-struct node_t
-{
-    v3 aabb_min; // 16 
-    f32 intensity;
-    v3 aabb_max; // 16
-    u32 id;
 };
 
 renderer_t::renderer_t(window_t* _window) : window(_window)
@@ -207,7 +175,7 @@ void renderer_t::update_descriptors(scene_t& scene)
         create_buffer(context, MAX_LIGHTS * sizeof(light_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &frame_resources[i].ubo_light);
         create_buffer(context, MAX_ENTITIES * sizeof(model_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &frame_resources[i].ubo_model); 
         create_buffer(context, MAX_ENTITIES * sizeof(material_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &frame_resources[i].sbo_material);
-        create_buffer(context, MAX_ENTITIES * sizeof(mesh_metadata_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &frame_resources[i].sbo_meshes);
+        create_buffer(context, MAX_ENTITIES * sizeof(mesh_info_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &frame_resources[i].sbo_meshes);
 
         VkDescriptorBufferInfo ubo_camera_info = { frame_resources[i].ubo_camera.handle, 0, VK_WHOLE_SIZE };
         VkDescriptorBufferInfo ubo_light_info  = { frame_resources[i].ubo_light.handle,  0, VK_WHOLE_SIZE };
@@ -243,7 +211,7 @@ void renderer_t::update_descriptors(scene_t& scene)
         frame_resources[i].descriptor_sets.push_back(build_descriptor_set(descriptor_allocator, set2));
 
         // (morton encode)
-        create_buffer(context, MAX_LIGHTS * sizeof(encoded_light_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &frame_resources[i].sbo_encoded_lights);
+        create_buffer(context, MAX_LIGHTS * sizeof(encoded_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &frame_resources[i].sbo_encoded_lights);
 
         VkDescriptorBufferInfo sbo_encoded_lights_info = { frame_resources[i].sbo_encoded_lights.handle, 0, VK_WHOLE_SIZE };
         descriptor_set_t set3(set_layouts[3]);
@@ -322,7 +290,6 @@ void renderer_t::update_descriptors(scene_t& scene)
     VK_CHECK(wait_for_queue(context.q_compute));
     VK_CHECK(wait_for_queue(context.q_transfer));
     vkFreeCommandBuffers(context.device, context.frames[0].command_pool, 1, &cmd); 
-    context.allocator.print_memory_usage();
 }
 
 renderer_t::~renderer_t()
@@ -382,12 +349,12 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             u64 offset = 0;
             for (const auto& mesh : scene.meshes)
             {
-                mesh_metadata_t md;
+                mesh_info_t md;
                 md.material_index = -1; // todo
                 md.vertex_offset = mesh.vertex_offset;
                 md.index_offset = mesh.index_offset;
-                copy_to_buffer(staging, frame_resources[frame_index].sbo_meshes, sizeof(mesh_metadata_t), (void*)&md, offset);
-                offset += sizeof(mesh_metadata_t);
+                copy_to_buffer(staging, frame_resources[frame_index].sbo_meshes, sizeof(mesh_info_t), (void*)&md, offset);
+                offset += sizeof(mesh_info_t);
             }
             
             mat_uploaded[frame_index] = true;
@@ -398,7 +365,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
        
         // upload camera data
         camera_ubo_t camera_data;
-        camera_data.position.xyz = camera.position; 
+        camera_data.pos.xyz = camera.position; 
         camera_data.view = camera.m_view;
         camera_data.proj = camera.m_proj;
         camera_data.inv_view = inverse(camera.m_view);
@@ -466,23 +433,25 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             // add dummy nodes to get to power of 2
             num_leaf_nodes = next_pow2(num_lights);
             LOG_INFO("%d dummy nodes added", num_leaf_nodes - num_lights);
-            struct constants_t
+            struct 
             {
                 int j;
                 int k;
                 int num_lights;
+                int total_nodes;
             } constants;
     
             u32 threads = MAX(num_leaf_nodes/512, 1);
-            constants.num_lights = num_lights;
+            constants.num_lights  = num_lights;
+            constants.total_nodes = num_leaf_nodes;
             for (int k = 2; k <= num_leaf_nodes; k <<= 1) 
             {
                 for (int j = k >> 1; j > 0; j >>= 1)
                 {
                     constants.j = j;
                     constants.k = k;
-                    LOG_INFO("k = %d, j = %d, threads = %d", k, j, threads);
-                    vkCmdPushConstants(cmd, sort_compute_pipeline.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants_t), &constants);
+                    //LOG_INFO("k = %d, j = %d, threads = %d", k, j, threads);
+                    vkCmdPushConstants(cmd, sort_compute_pipeline.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
                     vkCmdDispatch(cmd, threads, 1, 1);
 
                     // wait for prev to finish
@@ -504,7 +473,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, tree_leafs_compute_pipeline.handle);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, tree_leafs_compute_pipeline.layout, 0, 
                     1, &frame_resources[frame_index].descriptor_sets[5], 0, nullptr);
-            u32 leaf_nodes = static_cast<u32>(num_lights);
+            u32 leaf_nodes = static_cast<u32>(num_leaf_nodes);
             vkCmdPushConstants(cmd, tree_leafs_compute_pipeline.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(u32), &leaf_nodes);
             u32 threads = MAX(1, leaf_nodes/512);
             vkCmdDispatch(cmd, threads, 1, 1);
@@ -606,7 +575,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             buffer_t local;
             u32 h = static_cast<u32>(log2(num_leaf_nodes));
             u32 node_count = ((1 << (h + 1)) - 1);
-            u32 size = sizeof(node_t) *node_count;
+            u32 size = sizeof(node_t) * node_count;
             create_buffer(context, size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, &local,
                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
             
@@ -632,14 +601,19 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             u8* p_data;
             context.allocator.map_memory(local.allocation, (void**)&p_data);
             auto* ptr = reinterpret_cast<node_t*>(p_data);
-#if 1
+#if 0
             for (size_t i = 0; i < node_count; i++)
             {
                LOG_INFO("node: id %d, I %f", ptr[i].id, ptr[i].intensity);
             }
 #endif
-            // if we set intensity = 1 to every light
-            assert(ptr[node_count - 1].intensity == (1 << h)); 
+            f32 root_intensity = 0.0f;
+            for (u32 i = 0; i < num_leaf_nodes; ++i)
+            {
+                root_intensity += ptr[i].intensity;
+            }
+            assert(ptr[node_count - 1].intensity >= root_intensity - 1.0f || 
+                    ptr[node_count - 1].intensity <= root_intensity + 1.0f);
             context.allocator.unmap_memory(local.allocation);
             abort();
         }
@@ -686,11 +660,17 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
                 frame_resources[frame_index].descriptor_sets.data(), 0, nullptr);
 
         // camera matrices
-        push_constant_t constant;
-        constant.projection = camera.m_proj;
-        constant.view       = camera.m_view;
-        constant.num_lights = static_cast<i32>(scene.lights.size());
-        vkCmdPushConstants(cmd, graphics_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push_constant_t), &constant);
+        struct
+        {
+            m4x4 projection;
+            m4x4 view;
+            i32  num_lights;
+        } constants;
+
+        constants.projection = camera.m_proj;
+        constants.view       = camera.m_view;
+        constants.num_lights = static_cast<i32>(scene.lights.size());
+        vkCmdPushConstants(cmd, graphics_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(constants), &constants);
 
         for (const auto& batch : batches)
         {

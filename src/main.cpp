@@ -63,10 +63,7 @@ int main()
         add_entity(scene, 0, 0, translate4x4(0, 0, 4));
         add_entity(scene, 0, 0, translate4x4(0, 1, 4) * scale4x4(0.5) * rotate4x4_y(radians(45)));
         add_entity(scene, 1, 1, translate4x4(0, -0.5, 4) * scale4x4(2));
-        add_light(scene, vec3(1,0,0), vec3(1,1,0));
-        add_light(scene, vec3(1,1,1), vec3(1));
-        add_light(scene, vec3(0), vec3(1,0,0));
-        //add_random_lights(scene, RANDOM_LIGHT_COUNT, vec3(0,0,4), 10);
+        add_random_lights(scene, RANDOM_LIGHT_COUNT, vec3(0,0,4), 10);
 
         std::sort(std::begin(scene.entities), std::end(scene.entities),
                 [](const entity_t& a, const entity_t& b) 

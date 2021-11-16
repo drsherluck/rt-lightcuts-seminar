@@ -1,4 +1,8 @@
 #version 460
+#extension GL_GOOGLE_include_directive : enable
+
+#define GLSL
+#include "../src/shader_data.h"
 
 struct model_data
 {
@@ -12,14 +16,10 @@ layout(std140, set = 0, binding = 2) readonly buffer model_sbo
     model_data models[];
 };
 
-layout(std140, set = 0, binding = 0) uniform camera_ubo
+layout(std140, set = 0, binding = 0) uniform camera_ubo 
 {
-    vec3 pos;
-    mat4 view;
-    mat4 proj;
-    mat4 inv_view;
-    mat4 inv_proj;
-} camera;
+    camera_ubo_t camera;
+};
 
 layout(push_constant) uniform constants
 {

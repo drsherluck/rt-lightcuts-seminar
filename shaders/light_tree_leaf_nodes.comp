@@ -31,20 +31,29 @@ void main()
     if (id < total_nodes)
     {
         uint idx = encoded_lights[id].id;
-        light_t light = lights[idx]; 
 
         node_t node;
         node.id = idx;
-        node.intensity = light.color.x + light.color.y + light.color.z;
-        if (node.intensity > 0)
+        if (idx != 0xffffffff) // invalid index (dummy node)
         {
-            node.bbox_min = light.pos;
-            node.bbox_max = light.pos;
+            light_t light = lights[idx]; 
+            node.intensity = light.color.x + light.color.y + light.color.z;
+            if (node.intensity > 0)
+            {
+                node.bbox_min = light.pos;
+                node.bbox_max = light.pos;
+            }
+            else 
+            {
+                node.bbox_min = vec3(-1e8f);
+                node.bbox_max = vec3( 1e8f);
+            }
         }
-        else 
+        else
         {
-            node.bbox_min = vec3(-1e8);
-            node.bbox_max = vec3(1e8f);
+            node.intensity = 0.0;
+            node.bbox_min  = vec3(-1e8f);
+            node.bbox_max  = vec3( 1e8f);
         }
         nodes[id] = node;
     }
