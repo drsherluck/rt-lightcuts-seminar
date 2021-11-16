@@ -1,25 +1,9 @@
 #version 460
+#extension GL_GOOGLE_include_directive : enable
 
-struct light_t
-{
-    vec3 pos;
-    vec3 color;
-};
-
-struct encoded_t
-{
-    uint code;
-    uint id;
-};
-
-struct node_t
-{
-    vec3 bbox_min;
-    float intensity;
-    vec3 bbox_max;
-    uint id;
-};
-
+#define GLSL
+#include "../src/shader_data.h"
+#include "common.inc"
 
 layout(std430, set = 0, binding = 0) readonly buffer lights_buffer
 {
@@ -44,19 +28,6 @@ layout(push_constant) uniform constants
     uint src_level;    // the level we are merging our nodes from
     uint src_start_id; // the start id (in terms of nodes array index) of the src level
 };
-
-// https://graphics.stanford.edu/~seander/bithacks.html#IntegerLog
-uint get_msb(uint v)
-{
-    uint r;
-    uint shift;
-    r = uint(v > 0xFFFF) << 4; v >>= r;
-    shift = uint(v > 0xFF) << 3; v >>= shift; r |= shift;
-    shift = uint(v > 0xF ) << 2; v >>= shift; r |= shift;
-    shift = uint(v > 0x3 ) << 1; v >>= shift; r |= shift;
-    r |= (v >> 1);
-    return r;
-}
 
 layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
 void main()

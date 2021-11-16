@@ -12,7 +12,7 @@ foreach(SHADER ${SHADERS})
 
 	add_custom_command(
 		OUTPUT ${SPIRV}
-		COMMAND ${GLSL_VALIDATOR} --target-env vulkan1.2 ${SHADER} -o ${SPIRV}
+		COMMAND ${GLSL_VALIDATOR} --target-env vulkan1.2 -l ${SHADER} -o ${SPIRV}
 		DEPENDS ${SHADER}
 	)
 

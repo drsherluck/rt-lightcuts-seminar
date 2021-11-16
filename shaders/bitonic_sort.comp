@@ -1,14 +1,12 @@
 #version 460
+#extension GL_GOOGLE_include_directive : enable
 
-struct encoded_light_t
-{
-    uint morton_code;
-    uint index;
-};
+#define GLSL
+#include "../src/shader_data.h"
 
 layout(set = 0, binding = 0) buffer lights_buffer
 {
-    encoded_light_t arr[];
+    encoded_t arr[];
 };
 
 layout(push_constant) uniform constants
@@ -20,7 +18,7 @@ layout(push_constant) uniform constants
 
 void swap_elements(inout uint a, inout uint b)
 {
-    encoded_light_t temp = arr[a];
+    encoded_t temp = arr[a];
     arr[a] = arr[b];
     arr[b] = temp;
 };
@@ -36,14 +34,14 @@ void main()
     {
         if ((i & k) == 0)
         {
-           if (arr[i].morton_code > arr[l].morton_code)
+           if (arr[i].code > arr[l].code)
            {
                swap_elements(l, i);
            }
         }
         else 
         {
-            if (arr[i].morton_code < arr[l].morton_code)
+            if (arr[i].code < arr[l].code)
             {
                 swap_elements(l, i);
             }

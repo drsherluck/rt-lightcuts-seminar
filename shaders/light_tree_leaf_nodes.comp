@@ -1,25 +1,8 @@
 #version 460
+#extension GL_GOOGLE_include_directive : enable
 
-struct light_t
-{
-    vec3 pos;
-    vec3 color;
-};
-
-struct encoded_t
-{
-    uint code;
-    uint id;
-};
-
-struct node_t
-{
-    vec3 bbox_min;
-    float intensity;
-    vec3 bbox_max;
-    uint id;
-};
-
+#define GLSL
+#include "../src/shader_data.h"
 
 layout(std430, set = 0, binding = 0) readonly buffer lights_buffer
 {

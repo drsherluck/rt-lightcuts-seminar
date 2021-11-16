@@ -1,16 +1,8 @@
 #version 460
+#extension GL_GOOGLE_include_directive : enable
 
-struct light_t 
-{
-    vec3 pos;
-    vec3 color;
-};
-
-struct encoded_light_t 
-{
-    uint morton_code;
-    uint index;
-};
+#define GLSL
+#include "../src/shader_data.h"
 
 layout(std430, set = 0, binding = 0) readonly buffer lights_buffer
 {
@@ -19,24 +11,13 @@ layout(std430, set = 0, binding = 0) readonly buffer lights_buffer
 
 layout(std430, set = 0, binding = 1) writeonly buffer out_buffer
 {
-    encoded_light_t encoded_lights[];
+    encoded_t encoded_lights[];
 };
 
 layout(push_constant) uniform constants
 {
     int num_lights;
 };
-
-//https://fgiesen.wordpress.com/2009/12/13/decoding-morton-codes/
-uvec3 part1by2(uvec3 x)
-{
-    x &= 0x000003ff;
-    x = (x ^ (x << 16)) & 0xff0000ff;
-    x = (x ^ (x << 8)) & 0x0300f00f;
-    x = (x ^ (x << 4)) & 0x030c30c3;
-    x = (x ^ (x << 2)) & 0x09249249;
-    return x;
-}
 
 //https://developer.nvidia.com/blog/thinking-parallel-part-iii-tree-construction-gpu/
 uvec3 bit_expansion(uvec3 x)
@@ -61,8 +42,8 @@ void main()
     uint i = gl_GlobalInvocationID.x;
     if (i < num_lights)
     {
-        encoded_lights[i].morton_code = encode_morton(lights[i].pos);
-        encoded_lights[i].index = i;
+        encoded_lights[i].code = encode_morton(lights[i].pos);
+        encoded_lights[i].id = i;
     }
 }
 
