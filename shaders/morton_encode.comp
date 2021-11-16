@@ -61,8 +61,7 @@ void main()
     uint i = gl_GlobalInvocationID.x;
     if (i < num_lights)
     {
-        vec3 pos = lights[i].pos;
-        encoded_lights[i].morton_code = encode_morton(pos);
+        encoded_lights[i].morton_code = encode_morton(lights[i].pos);
         encoded_lights[i].index = i;
     }
 }

@@ -21,7 +21,8 @@ struct checkpoint_t
 
 class checkpoint_tracker_t
 {
-    SINGLETON(checkpoint_tracker_t);
+    SINGLETON(checkpoint_tracker_t)
+
 private:
     std::vector<checkpoint_t> checkpoints;
 

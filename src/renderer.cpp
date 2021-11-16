@@ -8,9 +8,9 @@
 
 #define ENABLE_MORTON_ENCODE 1
 #define ENABLE_SORT_LIGHTS 1
-#define ENABLE_LIGHT_TREE 0
-#define ENABLE_RTX 1
-#define ENABLE_VERIFY 0
+#define ENABLE_LIGHT_TREE 1
+#define ENABLE_RTX 0
+#define ENABLE_VERIFY 1
 
 #define MAX_DESCRIPTOR_SETS 50
 #define MAX_ENTITIES 100
@@ -503,22 +503,14 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             vkCmdPushConstants(cmd, tree_leafs_compute_pipeline.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(u32), &leaf_nodes);
             u32 threads = MAX(1, leaf_nodes/512);
             vkCmdDispatch(cmd, threads, 1, 1);
-            {
-            VkMemoryBarrier barrier = {};
-            barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
-            barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
-            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                    VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 
-                    0, 1, &barrier, 0, nullptr, 0, nullptr);
-            }
+
 
 
             CHECKPOINT(cmd, "[PRE] LIGHT TREE BUILD");
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, tree_compute_pipeline.handle);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, tree_compute_pipeline.layout, 0, 
                     1, &frame_resources[frame_index].descriptor_sets[5], 0, nullptr);
-
+#if 0
             u32 h = static_cast<u32>(log2(num_lights));
             u32 total = (1 << (h + 1)) - 1 - (1 << (h)); // skip leaf nodes
             u32 remaining_nodes = total;
@@ -547,6 +539,51 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
                 dispatch_count++;
             }
             LOG_INFO("dispatched %d", dispatch_count);
+#else  
+            // bottom up
+            // each level waits for previous level to be processed and every node in a dispatch is computed in parrallel
+            // this is better than creating all levels at once and merging from the leaf nodes directly because of cache 
+            //  (nodes at the top are at the end of the array while leaf nodes are at the start)
+            u32 h = static_cast<u32>(log2(num_lights));
+            u32 src_lvl = 0;
+            for (u32 dst_lvl = 1; dst_lvl <= h; dst_lvl++)
+            {
+                struct 
+                {
+                    u32 height;        // height of the tree (actually corresponds to 2^h = leaf nodes)
+                    u32 total_nodes;   // total nodes being processed in the current dispatch
+                    u32 start_id;      // used to calculate id and the level of a node being processed (root = 0)
+                    u32 src_level;     // the level from which to create nodes from (merge nodes together)
+                    u32 start_src_id;  // the start id for the src level nodes (used to access them in the array)
+                } constants;
+
+                // todo: could group level 0 -> 9 together because L1 is 48kb (NVIDIA 1060 6GB)
+                // 0 -> 9 = 2^10 - 1 = 1023 < 1536 nodes (48kb/32b = 1536)
+    
+                constants.height       = h;
+                constants.total_nodes  = (1 << (h - src_lvl)) - (1 << (h - dst_lvl));
+                constants.start_src_id = (1 << (h + 1)) - (1 << (h - src_lvl + 1));
+                constants.start_id     = ((1 << (h - src_lvl + 1)) - 1) - (1 << (h - src_lvl)) - constants.total_nodes;
+                constants.src_level    = h - src_lvl;
+    
+                LOG_INFO("level %d to %d, nodes = %d", h - src_lvl, h - dst_lvl, constants.total_nodes);
+                
+                // wait for previous level to finish
+                VkMemoryBarrier barrier = {};
+                barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+                barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                        VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 
+                        0, 1, &barrier, 0, nullptr, 0, nullptr);
+
+                vkCmdPushConstants(cmd, tree_compute_pipeline.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
+                u32 groups = MAX(constants.total_nodes / 512, 1);
+                vkCmdDispatch(cmd, groups, 1, 1);
+                
+                src_lvl = dst_lvl;
+            }
+#endif 
 
             VkMemoryBarrier barrier = {};
             barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
@@ -622,10 +659,13 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             u8* p_data;
             context.allocator.map_memory(local.allocation, (void**)&p_data);
             auto* ptr = reinterpret_cast<node_t*>(p_data);
+#if 0
             for (size_t i = 0; i < node_count; i++)
             {
-//               LOG_INFO("node: id %d, I %f", ptr[i].id, ptr[i].intensity);
+               LOG_INFO("node: id %d, I %f", ptr[i].id, ptr[i].intensity);
             }
+#endif
+            assert(ptr[node_count - 1].intensity == (1 << h));
             context.allocator.unmap_memory(local.allocation);
             abort();
         }

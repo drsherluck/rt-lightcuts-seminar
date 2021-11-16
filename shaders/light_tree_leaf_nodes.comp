@@ -51,7 +51,7 @@ void main()
         node.id = id;
    
         light_t light = lights[encoded_lights[id].id]; 
-        node.intensity = light.color.x + light.color.y + light.color.z;
+        node.intensity = 1.0;//light.color.x + light.color.y + light.color.z;
         if (node.intensity > 0)
         {
             node.bbox_min = light.pos;

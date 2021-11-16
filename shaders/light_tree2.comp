@@ -31,7 +31,7 @@ layout(std430, set = 0, binding = 1) readonly buffer encoded_buffer
     encoded_t encoded_lights[];
 };
 
-layout(std430, set = 0, binding = 2) writeonly buffer tree_buffer
+layout(std430, set = 0, binding = 2) buffer tree_buffer
 {
     node_t nodes[];
 };
@@ -41,7 +41,8 @@ layout(push_constant) uniform constants
     uint height;
     uint total_nodes; // max of 1024
     uint start_id;
-    uint total; // unused
+    uint src_level;
+    uint src_start_id;
 };
 
 uint get_msb(uint v)
@@ -61,18 +62,20 @@ void main()
 {
     if (gl_GlobalInvocationID.x < total_nodes)
     {
+#if 0
         uint id = gl_GlobalInvocationID.x + start_id;
         //uint level = uint(log2(id + 1)); 
         uint level = get_msb(id + 1);
-        uint level_id = id - ((1 << level) - 1);
-        uint idx = level_id + (1 << (height + 1)) - (1 << (level + 1));
+        uint level_id = id - ((1 << level) - 1); // \in [0, total_nodes_in_level - 1]
+        uint idx = level_id + (1 << (height + 1)) - (1 << (level + 1)); 
    
         uint merge_count = (1 << (height - level));
         uint merge_start_id = level_id * merge_count;
         uint merge_end_id = merge_start_id + merge_count;
 
+        // avoid to many random accesses (2x performance hit)
         node_t node;
-        node.id = idx; // avoid to many random accesses (2x performance hit)
+        node.id = idx; 
         float intensity = 0;
         for(uint i = merge_start_id; i < merge_end_id; i++)
         {
@@ -86,5 +89,29 @@ void main()
             }
         }
         nodes[idx] = node;
+#else 
+        uint id = gl_GlobalInvocationID.x + start_id;
+        uint level = get_msb(id + 1);
+        uint level_id = id - ((1 << level) - 1); // \in [0, total_nodes_in_level - 1]
+        uint idx = level_id + (1 << (height + 1)) - (1 << (level + 1)); 
+   
+        uint merge_count = (1 << (src_level - level));
+        uint merge_start_id = src_start_id + level_id * merge_count;
+        uint merge_end_id = merge_start_id + merge_count;
+
+        node_t node = nodes[merge_start_id];
+        node.id = idx; 
+        for(uint i = merge_start_id + 1; i < merge_end_id; i++)
+        {
+            node_t n = nodes[i];
+            if (n.intensity > 0)
+            {
+                node.intensity += n.intensity;
+                node.bbox_min = min(node.bbox_min, n.bbox_min);
+                node.bbox_max = max(node.bbox_max, n.bbox_max);
+            }
+        }
+        nodes[idx] = node;
+#endif
     }
 }
