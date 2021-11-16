@@ -1,7 +1,6 @@
 #include "renderer.h"
 #include "scene.h"
 #include "camera.h"
-#include "mesh.h" // material struct 
 #include "debug_util.h"
 #include "shader_data.h"
 
@@ -10,8 +9,8 @@
 #define ENABLE_MORTON_ENCODE 1
 #define ENABLE_SORT_LIGHTS 1
 #define ENABLE_LIGHT_TREE 1
-#define ENABLE_RTX 0
-#define ENABLE_VERIFY 1
+#define ENABLE_RTX 1
+#define ENABLE_VERIFY 0
 
 #define MAX_DESCRIPTOR_SETS 50
 #define MAX_ENTITIES 100
