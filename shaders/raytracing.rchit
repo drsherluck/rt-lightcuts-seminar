@@ -9,6 +9,9 @@
 #define GLSL_EXT_64
 #include "../src/shader_data.h"
 
+#define NODES_SSBO_SET 2
+#include "lightcuts.inc"
+
 struct vertex_t
 {
     vec3 pos;
@@ -90,12 +93,24 @@ void main()
     vec3 world_normal   = normalize(vec3(normal * gl_WorldToObjectEXT));
     vec3 geom_normal    = normalize(cross(v1.pos - v2.pos, v2.pos - v0.pos));
 
+    // generate light cut
+    light_cut_t light_cut[MAX_CUT_SIZE];
+    // todo push constant
+    light_tree_info_t tree_info; 
+
+    uint cut_size = 0;
+    gen_light_cut(world_position, light_cut, tree_info.num_nodes, cut_size);
+    selected_light_t selected_lights[MAX_CUT_SIZE];
+    select_lights(world_position, cut_size, light_cut, selected_lights, tree_info);
+
     // limit lights to 1 sample for now
     vec3 temp_color = vec3(0);
-    int n = min(num_lights, 3);
-    for (int i = 0; i < n; ++i)
+    for (int i = 0; i < cut_size; ++i)
     {
-        light_t light = lights[i];
+        selected_light_t selection = selected_lights[i];
+        if (selection.id == INVALID_ID) continue; // no contribution
+        light_t light = lights[selection.id];
+        float inv_prob = selection.prob == 0.0 ? 0 : 1.0/selection.prob;
         vec3 L = light.pos - world_position;
         float distance = length(L);
         L /= distance;
@@ -137,7 +152,7 @@ void main()
             }
         }
         attenuation *= 1.0 / (distance * distance);
-        temp_color += light.color * attenuation * (diffuse + specular);
+        vec3 px = light.color * attenuation * (diffuse + specular) * inv_prob;
     }
     payload = vec4(temp_color, 1.0);
 }
