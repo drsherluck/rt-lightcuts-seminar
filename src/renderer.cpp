@@ -3,6 +3,7 @@
 #include "camera.h"
 #include "debug_util.h"
 #include "shader_data.h"
+#include "time.h"
 
 #include <cassert>
 
@@ -44,6 +45,7 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
     add_binding(layout_set0, 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT   | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
     add_binding(layout_set0, 3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
     add_binding(layout_set0, 4, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
+    add_binding(layout_set0, 5, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
     build_descriptor_set_layout(context.device, layout_set0);
     // set 1
     auto& layout_set1 = set_layouts[1];
@@ -182,12 +184,16 @@ void renderer_t::update_descriptors(scene_t& scene)
         VkDescriptorBufferInfo sbo_material_info = { frame_resources[i].sbo_material.handle, 0, VK_WHOLE_SIZE };
         VkDescriptorBufferInfo sbo_meshes_info = { frame_resources[i].sbo_meshes.handle, 0, VK_WHOLE_SIZE };
 
+        create_buffer(context, MAX_LIGHT_TREE_SIZE * sizeof(node_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &frame_resources[i].sbo_light_tree);
+        VkDescriptorBufferInfo sbo_light_tree_info = { frame_resources[i].sbo_light_tree.handle, 0, VK_WHOLE_SIZE };
+
         descriptor_set_t set0(set_layouts[0]);
         bind_buffer(set0, 0, &ubo_camera_info);
         bind_buffer(set0, 1, &ubo_light_info);
         bind_buffer(set0, 2, &ubo_model_info);
         bind_buffer(set0, 3, &sbo_material_info);
         bind_buffer(set0, 4, &sbo_meshes_info);
+        bind_buffer(set0, 5, &sbo_light_tree_info);
         frame_resources[i].descriptor_sets.push_back(build_descriptor_set(descriptor_allocator, set0));
 
         // set 1
@@ -224,8 +230,6 @@ void renderer_t::update_descriptors(scene_t& scene)
         frame_resources[i].descriptor_sets.push_back(build_descriptor_set(descriptor_allocator, set4));
 
         // (tree builder)
-        create_buffer(context, MAX_LIGHT_TREE_SIZE * sizeof(node_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &frame_resources[i].sbo_light_tree);
-        VkDescriptorBufferInfo sbo_light_tree_info = { frame_resources[i].sbo_light_tree.handle, 0, VK_WHOLE_SIZE };
         descriptor_set_t set5(set_layouts[5]);
         bind_buffer(set5, 0, &ubo_light_info);
         bind_buffer(set5, 1, &sbo_encoded_lights_info);
@@ -431,7 +435,6 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
 
             // add dummy nodes to get to power of 2
             num_leaf_nodes = next_pow2(num_lights);
-            LOG_INFO("%d dummy nodes added", num_leaf_nodes - num_lights);
             struct 
             {
                 int j;
@@ -539,13 +542,27 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         // render using light tree
         if (ENABLE_RTX)
         {
+            CHECKPOINT(cmd, "[PRE] RAYTRACING");
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtx_pipeline.handle);
             vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtx_pipeline.layout, 0, 
                     2, &frame_resources[frame_index].descriptor_sets[0], 0, nullptr);
-            vkCmdPushConstants(cmd, rtx_pipeline.layout, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 0, sizeof(i32), &num_lights);
-            CHECKPOINT(cmd, "[PRE] RAY TRACE");
+
+            struct 
+            {
+                i32 num_nodes;
+                i32 num_leaf_nodes;
+                f32 time;
+            } constants;
+            
+            u32 h = static_cast<u32>(log2(num_leaf_nodes));
+            constants.num_nodes = ((1 << (h + 1)) - 1);
+            constants.num_leaf_nodes = num_leaf_nodes;
+            timespec tp;
+            clock_gettime(CLOCK_REALTIME, &tp);
+            constants.time = (float)tp.tv_nsec;
+            vkCmdPushConstants(cmd, rtx_pipeline.layout, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 0, sizeof(constants), &constants);
             vkCmdTraceRays(cmd, &sbt.rgen, &sbt.miss, &sbt.hit, &sbt.call, context.swapchain.extent.width, context.swapchain.extent.height, 1);
-            CHECKPOINT(cmd, "[POST] RAY TRACE");
+            CHECKPOINT(cmd, "[POST] RAYTRACING");
         }
 
         end_timer(profiler,cmd);
@@ -600,7 +617,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             u8* p_data;
             context.allocator.map_memory(local.allocation, (void**)&p_data);
             auto* ptr = reinterpret_cast<node_t*>(p_data);
-#if 0
+#if 1
             for (size_t i = 0; i < node_count; i++)
             {
                LOG_INFO("node: id %d, I %f", ptr[i].id, ptr[i].intensity);

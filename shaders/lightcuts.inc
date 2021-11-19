@@ -10,13 +10,18 @@
 #ifndef NODES_SSBO_SET
     #define NODES_SSBO_SET 0
 #endif
+#ifndef NODES_SSBO_BINDING
+    #define NODES_SSBO_BINDING 0
+#endif
 
-#define MAX_CUT_SIZE 10
+#define MAX_CUT_SIZE 32
 // todo: make push constant
-#define USER_MAX_CUT 3
+#ifndef USER_MAX_CUT
+    #define USER_MAX_CUT 1
+#endif
 
 // (hack) define the buffer here so that we can reuse
-layout(std430, set = NODES_SSBO_SET, binding = 0) readonly buffer nodes_sbo
+layout(std430, set = NODES_SSBO_SET, binding = NODES_SSBO_BINDING) readonly buffer nodes_sbo
 {
     node_t nodes[];
 };
@@ -27,11 +32,18 @@ struct light_cut_t
     float error;
 };
 
-struct light_tree_info_t
+struct selected_light_t
 {
-    int num_nodes;
-    int num_leaf_nodes;
+    uint id; 
+    float prob;
 };
+
+uint get_array_index(uint id, uint num_nodes)
+{
+    uint level = get_msb(id + 1);
+    uint level_id = id  - ((1 << level) - 1);
+    return level_id + num_nodes - (1 << (level + 1)) + 1;
+}
 
 float squared_min_distance(vec3 p, vec3 bbox_min, vec3 bbox_max)
 {
@@ -44,7 +56,6 @@ float squared_max_distance(vec3 p, vec3 bbox_min, vec3 bbox_max)
     vec3 d = max(abs(bbox_min - p), abs(bbox_max - p));
     return dot(d,d);
 }
-
 
 // only using point lights
 float geometric_term(vec3 p, vec3 bbox_min, vec3 bbox_max)
@@ -65,7 +76,7 @@ void gen_light_cut(vec3 p, inout light_cut_t light_cut[MAX_CUT_SIZE], int num_no
 {
     selected = 1;
     light_cut[0].id = 0;
-    int max_id = 0;
+    uint max_id = 0;
     while (selected < USER_MAX_CUT)
     {
         // replace with children
@@ -73,14 +84,15 @@ void gen_light_cut(vec3 p, inout light_cut_t light_cut[MAX_CUT_SIZE], int num_no
         uint rchild = lchild + 1;
 
         light_cut[max_id].id = lchild;
-        light_cut[max_id].error = calc_node_error(num_nodes - lchild, p);
+        light_cut[max_id].error = 1;//calc_node_error(get_array_index(lchild, num_nodes), p);
     
         // second child added to the back
-        if (nodes[num_nodes - rchild].intensity > 0)
+        uint ridx = get_array_index(rchild, num_nodes);
+        if (nodes[ridx].intensity > 0)
         {
+            light_cut[selected].id = rchild;
+            light_cut[selected].error = 1;//calc_node_error(ridx, p);
             selected++;
-            light_cut[selected - 1].id = rchild;
-            light_cut[selected - 1].error = calc_node_error(num_nodes - rchild, p);
         }
 
         // find node in current lightcut with highest error
@@ -88,30 +100,43 @@ void gen_light_cut(vec3 p, inout light_cut_t light_cut[MAX_CUT_SIZE], int num_no
         float max_error = FLT_MIN;
         for (int i = 0; i < selected; ++i)
         {
-            if (light_cut[i].error > max_error)
+            light_cut_t n = light_cut[i];
+            if (n.error > max_error)
             {
-                max_id = i;
-                max_error = light_cut[i].error;
+                max_id = n.id;
+                max_error = n.error;
             }
         }
         
         // stop if the error is acceptable 
-        if (max_error < 0.02) break;
+        //if (max_error < 0.02) break;
     }
 }
 
-struct selected_light_t
+void dummy_select_lights(vec3 p,
+    uint light_cut_size, 
+    inout light_cut_t light_cut[MAX_CUT_SIZE], 
+    inout selected_light_t selected_lights[MAX_CUT_SIZE], 
+    int num_nodes,
+    int num_leaf_nodes)
 {
-    uint id; // todo make int?
-    float prob;
-};
+    int id = 0;
+    for (int i = 0; i < light_cut_size; i++)
+    {
+        selected_lights[i].id = id;
+        selected_lights[i].prob = 1.0;
+        id = min(id + 1, num_leaf_nodes - 1);
+    }
+}
 
 // get list of light samples
 void select_lights(vec3 p, 
     uint light_cut_size, 
     inout light_cut_t light_cut[MAX_CUT_SIZE], 
     inout selected_light_t selected_lights[MAX_CUT_SIZE], 
-    inout light_tree_info_t tree_info)
+    int num_nodes,
+    int num_leaf_nodes,
+    float time)
 {
     // for each node in the cut
     // - traverse tree and return light source and probability of sampling that light 
@@ -122,22 +147,24 @@ void select_lights(vec3 p,
     // - color[i] = is_visible * light.color / probability
     
     // tree traversal
+    uint leaf_node_max_id = num_nodes - num_leaf_nodes;
     for (uint i = 0; i < light_cut_size; i++)
     {
         uint id = light_cut[i].id;
-        uint leaf_node_max_id = tree_info.num_nodes - tree_info.num_leaf_nodes;
 
         // todo use time
-        float r = random(float(id));
+        float r = random(time);
         float prob = 1.0;
         // while not leaf node
         while (id < leaf_node_max_id) 
         {
             uint c0 = ((id + 1) << 1) - 1;
             uint c1 = c0 + 1;
-           
-            node_t n0 = nodes[tree_info.num_nodes - c0];
-            node_t n1 = nodes[tree_info.num_nodes - c1];
+            
+            uint c0_idx = get_array_index(c0, num_nodes);
+            uint c1_idx = get_array_index(c1, num_nodes);
+            node_t n0 = nodes[c0_idx];
+            node_t n1 = nodes[c1_idx];
            
             // todo check if bogus
             if (n0.intensity + n1.intensity == 0) 
@@ -182,7 +209,7 @@ void select_lights(vec3 p,
         }
         if (id != INVALID_ID)
         {
-            id = tree_info.num_nodes - id - 1;
+            id = get_array_index(id, num_nodes);
         }
         selected_lights[i].id = id;
         selected_lights[i].prob = prob;

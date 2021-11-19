@@ -9,7 +9,9 @@
 #define GLSL_EXT_64
 #include "../src/shader_data.h"
 
-#define NODES_SSBO_SET 2
+#define USER_MAX_CUT 4
+#define NODES_SSBO_SET 0
+#define NODES_SSBO_BINDING 5
 #include "lightcuts.inc"
 
 struct vertex_t
@@ -64,7 +66,9 @@ layout(set = 1, binding = 1) uniform scene_ubo
 
 layout(push_constant) uniform constants
 {
-    int num_lights;
+    int num_nodes;
+    int num_leaf_nodes;
+    float time;
 };
 
 
@@ -93,15 +97,12 @@ void main()
     vec3 world_normal   = normalize(vec3(normal * gl_WorldToObjectEXT));
     vec3 geom_normal    = normalize(cross(v1.pos - v2.pos, v2.pos - v0.pos));
 
-    // generate light cut
+    // generate light cut and select lights
     light_cut_t light_cut[MAX_CUT_SIZE];
-    // todo push constant
-    light_tree_info_t tree_info; 
-
-    uint cut_size = 0;
-    gen_light_cut(world_position, light_cut, tree_info.num_nodes, cut_size);
+    uint cut_size;
+    gen_light_cut(world_position, light_cut, num_nodes, cut_size);
     selected_light_t selected_lights[MAX_CUT_SIZE];
-    select_lights(world_position, cut_size, light_cut, selected_lights, tree_info);
+    select_lights(world_position, cut_size, light_cut, selected_lights, num_nodes, num_leaf_nodes, time);
 
     // limit lights to 1 sample for now
     vec3 temp_color = vec3(0);
@@ -117,7 +118,6 @@ void main()
 
         // white color
         vec3 diffuse = vec3(1) * max(dot(world_normal, L), 0.0);
-
         vec3 specular = vec3(0);
         float attenuation = 1;
 
@@ -153,6 +153,7 @@ void main()
         }
         attenuation *= 1.0 / (distance * distance);
         vec3 px = light.color * attenuation * (diffuse + specular) * inv_prob;
+        temp_color += px/cut_size;
     }
     payload = vec4(temp_color, 1.0);
 }
