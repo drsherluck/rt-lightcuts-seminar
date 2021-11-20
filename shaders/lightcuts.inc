@@ -77,6 +77,8 @@ void gen_light_cut(vec3 p, inout light_cut_t light_cut[MAX_CUT_SIZE], int num_no
     selected = 1;
     light_cut[0].id = 0;
     uint max_id = 0;
+    uint h = get_msb(num_nodes + 1);
+    uint size = min(USER_MAX_CUT, (1 << h));
     while (selected < USER_MAX_CUT)
     {
         // replace with children

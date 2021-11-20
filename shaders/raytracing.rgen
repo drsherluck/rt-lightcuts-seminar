@@ -2,6 +2,8 @@
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_ray_tracing : require
 
+#define NUM_SAMPLES 1
+
 #define GLSL
 #include "../src/shader_data.h"
 
@@ -23,18 +25,24 @@ void main()
     vec4 target = camera.inv_proj * vec4(d.x, d.y, 1, 1);
     vec4 direction = camera.inv_view * vec4(normalize(target.xyz), 0);
 
-    traceRayEXT(tlas,
-        gl_RayFlagsOpaqueEXT, 
-        0xff, 
-        0,  // sbt offset
-        0,  // sbt stride
-        0,  // miss index
-        origin, 
-        0.001,
-        direction.xyz, 
-        10000.0, 
-        0
-    );
+    vec4 px_color = vec4(0);
+    for (int i = 0; i < NUM_SAMPLES; i++)
+    {
+        traceRayEXT(tlas,
+            gl_RayFlagsOpaqueEXT, 
+            0xff, 
+            0,  // sbt offset
+            0,  // sbt stride
+            0,  // miss index
+            origin, 
+            0.001,
+            direction.xyz, 
+            10000.0, 
+            0
+        );
+        
+        px_color += payload/NUM_SAMPLES;
+    }
 
-    imageStore(img, ivec2(gl_LaunchIDEXT.xy), payload);
+    imageStore(img, ivec2(gl_LaunchIDEXT.xy), px_color);
 }

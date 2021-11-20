@@ -11,16 +11,30 @@
 #define WIDTH 640//1024
 #define HEIGHT 480//768
 
-#define _randf() (((f32) rand()/(RAND_MAX)) + 1.0)
-#define _randf2() ((((f32) rand()/(RAND_MAX)) + 1.0) * (rand() % 2 ? -1.0 : 1.0))
+#define _randf() ((((f32) rand())/((f32) RAND_MAX)))
+#define _randf2() (_randf() * (rand() % 2 ? -1.0 : 1.0))
 
-#define RANDOM_LIGHT_COUNT 4 //(1 << 17) // 17 is around 100000 lights (sorting worse after this)
+#define RANDOM_LIGHT_COUNT 8 //(1 << 17) // 17 is around 100000 lights (sorting worse after this)
+
+static v3 random_color()
+{
+    float r = _randf();
+    if (r <= 0.33333f)
+    {
+        return vec3(1,0,0);
+    }
+    else if (r <= 0.6667f)
+    {
+        return vec3(0,1,0);
+    }
+    return vec3(0,0,1);
+}
 
 static void add_random_lights(scene_t& scene, u32 count, v3 origin, f32 max_distance)
 {
     for (u32 i = 0; i < count; ++i)
     {
-        v3 color = vec3(_randf(), _randf(), _randf());
+        v3 color = random_color();//vec3(_randf(), _randf(), _randf());
         v3 pos = vec3(_randf2(), _randf2(), _randf2());
         pos *= max_distance/length(pos);
         pos = origin + pos;
@@ -81,17 +95,15 @@ int main()
     // render loop
     frame_time_t time;
     bool run = true;
+    bool pause = false;
     while(run)
     {
         update_time(time);
         f32 dt = delta_in_seconds(time);
         if (1)
         {
-            scene.entities[1].m_model *= rotate4x4_y(dt);
-            update_acceleration_structures(renderer.context, scene);
             run = window.poll_events();
 
-            camera.update(dt, window);
             if (is_key_pressed(window, KEY_ESC))
             {
                 window.close();
@@ -99,11 +111,18 @@ int main()
             }
             if (is_key_pressed(window, KEY_P))
             {
-                renderer.context.allocator.print_memory_usage();
                 print_time_info(time);
+                pause = !pause;
+                LOG_INFO(pause ? "paused" : "resumed");
             }
-
-            renderer.draw_scene(scene, camera);
+            
+            if (!pause) 
+            {
+                camera.update(dt, window);
+                scene.entities[1].m_model *= rotate4x4_y(dt);
+                update_acceleration_structures(renderer.context, scene);
+                renderer.draw_scene(scene, camera);
+            }
         }
     }
 

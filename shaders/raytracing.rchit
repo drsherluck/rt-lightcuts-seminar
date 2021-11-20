@@ -9,7 +9,7 @@
 #define GLSL_EXT_64
 #include "../src/shader_data.h"
 
-#define USER_MAX_CUT 4
+#define USER_MAX_CUT 2
 #define NODES_SSBO_SET 0
 #define NODES_SSBO_BINDING 5
 #include "lightcuts.inc"
@@ -71,7 +71,6 @@ layout(push_constant) uniform constants
     float time;
 };
 
-
 layout(location = 0) rayPayloadInEXT vec4 payload;
 layout(location = 1) rayPayloadEXT bool is_shadow;
 hitAttributeEXT vec2 attribs;
@@ -102,14 +101,15 @@ void main()
     uint cut_size;
     gen_light_cut(world_position, light_cut, num_nodes, cut_size);
     selected_light_t selected_lights[MAX_CUT_SIZE];
-    select_lights(world_position, cut_size, light_cut, selected_lights, num_nodes, num_leaf_nodes, time);
+    float seed = random(float(gl_LaunchIDEXT.x)) + random(float(gl_LaunchIDEXT.y));
+    select_lights(world_position, cut_size, light_cut, selected_lights, num_nodes, num_leaf_nodes, time * seed);
 
     // limit lights to 1 sample for now
     vec3 temp_color = vec3(0);
     for (int i = 0; i < cut_size; ++i)
     {
         selected_light_t selection = selected_lights[i];
-        if (selection.id == INVALID_ID) continue; // no contribution
+        if (selection.id == INVALID_ID || selection.prob == 0.0) continue; // no contribution
         light_t light = lights[selection.id];
         float inv_prob = selection.prob == 0.0 ? 0 : 1.0/selection.prob;
         vec3 L = light.pos - world_position;
@@ -153,7 +153,7 @@ void main()
         }
         attenuation *= 1.0 / (distance * distance);
         vec3 px = light.color * attenuation * (diffuse + specular) * inv_prob;
-        temp_color += px/cut_size;
+        temp_color += px;
     }
     payload = vec4(temp_color, 1.0);
 }
