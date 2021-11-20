@@ -657,47 +657,6 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         submit_info.pCommandBuffers = &cmd;
 
         VK_CHECK( vkQueueSubmit(context.q_graphics, 1, &submit_info, frame->fence) ); 
-#if 0
-        VK_CHECK( begin_command_buffer(cmd) );
-
-        VkClearValue clear[2];
-        clear[0].color = {0, 0, 0, 0};
-        clear[1].depthStencil = {1, 0};
-        begin_render_pass(context, cmd, clear, 2);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline.handle);
-
-        // bind entity descriptors
-        u32 first_instance_id = 0;
-        VkDeviceSize offsets[1] = {0};
-        vkCmdBindVertexBuffers(cmd, 0, 1, &scene.vbo.handle, offsets);
-        vkCmdBindIndexBuffer(cmd, scene.ibo.handle, 0, VK_INDEX_TYPE_UINT32);
-        u32 descriptor_count = static_cast<u32>(frame_resources[frame_index].descriptor_sets.size());
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, graphics_pipeline.layout, 0, descriptor_count, 
-                frame_resources[frame_index].descriptor_sets.data(), 0, nullptr);
-
-        // camera matrices
-        struct
-        {
-            m4x4 projection;
-            m4x4 view;
-            i32  num_lights;
-        } constants;
-
-        constants.projection = camera.m_proj;
-        constants.view       = camera.m_view;
-        constants.num_lights = static_cast<i32>(scene.lights.size());
-        vkCmdPushConstants(cmd, graphics_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(constants), &constants);
-
-        for (const auto& batch : batches)
-        {
-            auto& mesh = meshes[batch.mesh_id];
-            vkCmdDrawIndexed(cmd, mesh.index_count, batch.instance_count, 
-                    mesh.index_offset, mesh.vertex_offset, first_instance_id);
-            first_instance_id += batch.instance_count;
-        }
-        vkCmdEndRenderPass(cmd);
-        VK_CHECK( vkEndCommandBuffer(cmd) );
-#endif
     }
 
     //graphics_submit_frame(context, frame);
