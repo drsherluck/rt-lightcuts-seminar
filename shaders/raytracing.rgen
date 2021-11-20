@@ -2,10 +2,11 @@
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_ray_tracing : require
 
-#define NUM_SAMPLES 1
+#define NUM_SAMPLES 4
 
 #define GLSL
 #include "../src/shader_data.h"
+#include "common.inc"
 
 layout(set = 0, binding = 0) uniform camera_ubo 
 {
@@ -14,7 +15,13 @@ layout(set = 0, binding = 0) uniform camera_ubo
 layout(set = 1, binding = 0) uniform accelerationStructureEXT tlas;
 layout(set = 1, binding = 2, rgba32f) uniform image2D img;
 
-layout(location = 0) rayPayloadEXT vec4 payload;
+struct payload_t
+{
+    int sample_id;
+    float seed;
+    vec4 color;
+};
+layout(location = 0) rayPayloadEXT payload_t payload;
 
 void main()
 {
@@ -28,6 +35,8 @@ void main()
     vec4 px_color = vec4(0);
     for (int i = 0; i < NUM_SAMPLES; i++)
     {
+        payload.sample_id = i;
+        payload.seed = random(i);
         traceRayEXT(tlas,
             gl_RayFlagsOpaqueEXT, 
             0xff, 
@@ -41,7 +50,7 @@ void main()
             0
         );
         
-        px_color += payload/NUM_SAMPLES;
+        px_color += payload.color/NUM_SAMPLES;
     }
 
     imageStore(img, ivec2(gl_LaunchIDEXT.xy), px_color);

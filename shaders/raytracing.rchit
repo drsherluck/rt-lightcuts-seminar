@@ -9,7 +9,7 @@
 #define GLSL_EXT_64
 #include "../src/shader_data.h"
 
-#define USER_MAX_CUT 2
+#define USER_MAX_CUT 1
 #define NODES_SSBO_SET 0
 #define NODES_SSBO_BINDING 5
 #include "lightcuts.inc"
@@ -71,7 +71,13 @@ layout(push_constant) uniform constants
     float time;
 };
 
-layout(location = 0) rayPayloadInEXT vec4 payload;
+struct payload_t
+{
+    int sample_id;
+    float seed;
+    vec4 color;
+};
+layout(location = 0) rayPayloadInEXT payload_t payload;
 layout(location = 1) rayPayloadEXT bool is_shadow;
 hitAttributeEXT vec2 attribs;
 
@@ -97,11 +103,26 @@ void main()
     vec3 geom_normal    = normalize(cross(v1.pos - v2.pos, v2.pos - v0.pos));
 
     // generate light cut and select lights
-    light_cut_t light_cut[MAX_CUT_SIZE];
     uint cut_size;
-    gen_light_cut(world_position, light_cut, num_nodes, cut_size);
+    light_cut_t light_cut[MAX_CUT_SIZE];
     selected_light_t selected_lights[MAX_CUT_SIZE];
-    float seed = random(float(gl_LaunchIDEXT.x)) + random(float(gl_LaunchIDEXT.y));
+    gen_light_cut(world_position, light_cut, num_nodes, cut_size);
+#if 0
+    // verify that light cut consists of different nodes
+    for (int i = 0; i < cut_size; ++i)
+    {
+        uint id = light_cut[i].id;
+        for (int j = 0; j < cut_size; ++j)
+        {
+            if (j != i && light_cut[j].id == id) 
+            {
+                payload = vec4(1,1,0,1);
+                return;
+            }
+        }
+    }
+#endif 
+    float seed = random(float(gl_LaunchIDEXT.x)) + random(float(gl_LaunchIDEXT.y)) + payload.seed;
     select_lights(world_position, cut_size, light_cut, selected_lights, num_nodes, num_leaf_nodes, time * seed);
 
     // limit lights to 1 sample for now
@@ -126,7 +147,6 @@ void main()
         {
             vec3 origin = gl_WorldRayOriginEXT + gl_WorldRayDirectionEXT * gl_HitTEXT;
             uint flags = gl_RayFlagsTerminateOnFirstHitEXT | gl_RayFlagsOpaqueEXT | gl_RayFlagsSkipClosestHitShaderEXT;
-
             is_shadow = true;
             traceRayEXT(tlas, 
                 flags,
@@ -155,5 +175,5 @@ void main()
         vec3 px = light.color * attenuation * (diffuse + specular) * inv_prob;
         temp_color += px;
     }
-    payload = vec4(temp_color, 1.0);
+    payload.color = vec4(temp_color, 1.0);
 }

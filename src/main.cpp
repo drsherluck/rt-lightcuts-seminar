@@ -14,7 +14,7 @@
 #define _randf() ((((f32) rand())/((f32) RAND_MAX)))
 #define _randf2() (_randf() * (rand() % 2 ? -1.0 : 1.0))
 
-#define RANDOM_LIGHT_COUNT 8 //(1 << 17) // 17 is around 100000 lights (sorting worse after this)
+#define RANDOM_LIGHT_COUNT 1 << 10 //(1 << 17) // 17 is around 100000 lights (sorting worse after this)
 
 static v3 random_color()
 {
@@ -35,9 +35,8 @@ static void add_random_lights(scene_t& scene, u32 count, v3 origin, f32 max_dist
     for (u32 i = 0; i < count; ++i)
     {
         v3 color = random_color();//vec3(_randf(), _randf(), _randf());
-        v3 pos = vec3(_randf2(), _randf2(), _randf2());
-        pos *= max_distance/length(pos);
-        pos = origin + pos;
+        v3 dir = normalize(vec3(_randf2(), _randf(), _randf2()));
+        v3 pos = origin + dir * max_distance;
         add_light(scene, pos, color);
     }
 }
@@ -77,7 +76,13 @@ int main()
         add_entity(scene, 0, 0, translate4x4(0, 0, 4));
         add_entity(scene, 0, 0, translate4x4(0, 1, 4) * scale4x4(0.5) * rotate4x4_y(radians(45)));
         add_entity(scene, 1, 1, translate4x4(0, -0.5, 4) * scale4x4(2));
-        add_random_lights(scene, RANDOM_LIGHT_COUNT, vec3(0,0,4), 10);
+#if 0
+        add_light(scene, vec3(-1, 3, 1), vec3(1, 0, 0));
+        add_light(scene, vec3(0, 1, 4), vec3(0, 1, 0));
+        add_light(scene, vec3(-3, 2, 2), vec3(0, 0, 1));
+        add_light(scene, vec3(3, 2, 2), vec3(1, 1, 1));
+#endif
+        add_random_lights(scene, RANDOM_LIGHT_COUNT, vec3(0,1,4), 50);
 
         std::sort(std::begin(scene.entities), std::end(scene.entities),
                 [](const entity_t& a, const entity_t& b) 

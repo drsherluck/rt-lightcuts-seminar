@@ -79,21 +79,21 @@ void gen_light_cut(vec3 p, inout light_cut_t light_cut[MAX_CUT_SIZE], int num_no
     uint max_id = 0;
     uint h = get_msb(num_nodes + 1);
     uint size = min(USER_MAX_CUT, (1 << h));
-    while (selected < USER_MAX_CUT)
+    while (selected < size)
     {
         // replace with children
         uint lchild = ((max_id + 1) << 1) - 1;
         uint rchild = lchild + 1;
 
         light_cut[max_id].id = lchild;
-        light_cut[max_id].error = 1;//calc_node_error(get_array_index(lchild, num_nodes), p);
+        light_cut[max_id].error = calc_node_error(get_array_index(lchild, num_nodes), p);
     
         // second child added to the back
         uint ridx = get_array_index(rchild, num_nodes);
         if (nodes[ridx].intensity > 0)
         {
             light_cut[selected].id = rchild;
-            light_cut[selected].error = 1;//calc_node_error(ridx, p);
+            light_cut[selected].error = calc_node_error(ridx, p);
             selected++;
         }
 
@@ -105,7 +105,7 @@ void gen_light_cut(vec3 p, inout light_cut_t light_cut[MAX_CUT_SIZE], int num_no
             light_cut_t n = light_cut[i];
             if (n.error > max_error)
             {
-                max_id = n.id;
+                max_id = i;
                 max_error = n.error;
             }
         }
