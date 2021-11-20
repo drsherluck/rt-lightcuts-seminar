@@ -9,7 +9,7 @@
 #define GLSL_EXT_64
 #include "../src/shader_data.h"
 
-#define USER_MAX_CUT 1
+#define USER_MAX_CUT 4
 #define NODES_SSBO_SET 0
 #define NODES_SSBO_BINDING 5
 #include "lightcuts.inc"
