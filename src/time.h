@@ -42,11 +42,13 @@ inline f32 delta_in_seconds(frame_time_t& time)
     return time.delta;
 }
 
-inline void update_time(frame_time_t& time)
+inline bool update_time(frame_time_t& time, f32 frame_dt = 0.0)
 {
     static f32 sec = std::chrono::duration<f32>().count();
-    time.curr = std::chrono::steady_clock::now();
-    time.delta = std::chrono::duration_cast<std::chrono::duration<f32>>(time.curr - time.prev).count();
+    do {
+        time.curr = std::chrono::steady_clock::now();
+        time.delta = std::chrono::duration_cast<std::chrono::duration<f32>>(time.curr - time.prev).count();
+    } while (time.delta < frame_dt);
     time.prev = time.curr;
     time._total_dt += time.delta;
     time._counter++;
