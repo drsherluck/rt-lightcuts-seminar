@@ -2,7 +2,7 @@
 #extension GL_GOOGLE_include_directive : enable
 #extension GL_EXT_ray_tracing : require
 
-#define NUM_SAMPLES 4
+#define NUM_SAMPLES 1
 
 #define GLSL
 #include "../src/shader_data.h"

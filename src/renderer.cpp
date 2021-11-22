@@ -624,7 +624,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
             }
 #endif
             f32 root_intensity = 0.0f;
-            for (u32 i = 0; i < num_leaf_nodes; ++i)
+            for (i32 i = 0; i < num_leaf_nodes; ++i)
             {
                 root_intensity += ptr[i].intensity;
             }

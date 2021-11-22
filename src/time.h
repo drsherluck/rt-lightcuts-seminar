@@ -42,7 +42,7 @@ inline f32 delta_in_seconds(frame_time_t& time)
     return time.delta;
 }
 
-inline bool update_time(frame_time_t& time, f32 frame_dt = 0.0)
+inline void update_time(frame_time_t& time, f32 frame_dt = 0.0)
 {
     static f32 sec = std::chrono::duration<f32>().count();
     do {

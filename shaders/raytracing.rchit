@@ -116,21 +116,22 @@ void main()
         {
             if (j != i && light_cut[j].id == id) 
             {
-                payload = vec4(1,1,0,1);
+                payload.color = vec4(1,1,0,1);
                 return;
             }
         }
     }
 #endif 
-    float seed = random(float(gl_LaunchIDEXT.x)) + random(float(gl_LaunchIDEXT.y)) + payload.seed;
-    select_lights(world_position, cut_size, light_cut, selected_lights, num_nodes, num_leaf_nodes, time * seed);
+    float r = random(vec4(gl_LaunchIDEXT.xy, payload.seed, time));
+    select_lights(world_position, cut_size, light_cut, selected_lights, num_nodes, num_leaf_nodes, r);
 
     // limit lights to 1 sample for now
     vec3 temp_color = vec3(0);
     for (int i = 0; i < cut_size; ++i)
     {
         selected_light_t selection = selected_lights[i];
-        if (selection.id == INVALID_ID || selection.prob == 0.0) continue; // no contribution
+        if (selection.id == INVALID_ID || selection.prob == 0.0) continue;
+
         light_t light = lights[selection.id];
         float inv_prob = selection.prob == 0.0 ? 0 : 1.0/selection.prob;
         vec3 L = light.pos - world_position;

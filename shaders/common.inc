@@ -25,6 +25,19 @@ uint hash(uint x)
     return x;
 }
 
+uint hash(uvec4 v)
+{
+    return hash(v.x ^ hash(v.y) ^ hash(v.z) ^ hash(v.w));
+}
+
+float random(vec4 f)
+{
+    uint h = hash(floatBitsToUint(f));
+    h &= 0x007FFFFFu;
+    h |= 0x3F800000u;
+    return uintBitsToFloat(h) - 1.0;
+}
+
 float random(float f) 
 {
     uint h = hash(floatBitsToUint(f));
