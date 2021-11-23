@@ -17,6 +17,9 @@ struct camera_t
 	m4x4 m_proj;
 	m4x4 m_view;
 
+    f32 znear = 0.1f;
+    f32 zfar = 5.0f;
+
 	f32 move_speed = 5.0f;
     f32 sensitivity = 2.0f;
 

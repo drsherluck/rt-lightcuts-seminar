@@ -485,7 +485,7 @@ void create_swapchain(gpu_context_t& ctx, window_t* window)
 	info.imageColorSpace = selected_format.colorSpace;
 	info.imageExtent = extent;
 	info.imageArrayLayers = 1;
-	info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; // Set here VK_IMAGE_USAGE_STORAGE_BIT
+	info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT; // Set here VK_IMAGE_USAGE_STORAGE_BIT
 	info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	info.preTransform = capabilities.currentTransform;
 	info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;

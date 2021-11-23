@@ -29,7 +29,7 @@ void camera_t::lookat(v3 pos)
 void camera_t::set_fov(f32 fov, f32 aspect)
 {
     this->fov = fov;
-    m_proj = perspective(fov, aspect, 0.1f, 5.0f);
+    m_proj = perspective(fov, aspect, znear, zfar);
 }
 
 void camera_t::update(f32 dt, window_t& window)

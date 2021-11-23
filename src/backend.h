@@ -152,5 +152,6 @@ void present_frame(gpu_context_t& ctx, frame_t* frame);
 void on_window_resize(gpu_context_t& ctx, window_t& window);
 inline void wait_idle(gpu_context_t& ctx) { vkDeviceWaitIdle(ctx.device); }
 inline VkResult wait_for_queue(VkQueue queue) { return vkQueueWaitIdle(queue); }
+inline VkImage get_swapchain_image(gpu_context_t& ctx) { return ctx.swapchain.images[ctx.swapchain.image_index]; };
 
 #endif // BACKEND_H

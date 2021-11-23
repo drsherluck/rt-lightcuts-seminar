@@ -26,6 +26,82 @@ struct batch_t
     u32 mesh_id;
 };
 
+void renderer_t::create_prepass_render_pass()
+{
+    // create render pass;
+	VkAttachmentDescription attachment = {};
+	attachment.format         = VK_FORMAT_D32_SFLOAT; 
+	attachment.samples        = VK_SAMPLE_COUNT_1_BIT;
+	attachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachment.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
+	attachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
+	attachment.finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+
+	VkAttachmentReference reference =  {};
+    reference.attachment = 0;
+    reference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+	VkSubpassDescription subpass = {};
+	subpass.pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.inputAttachmentCount    = 0;
+	subpass.colorAttachmentCount    = 0;
+	subpass.pDepthStencilAttachment = &reference;
+
+    VkSubpassDependency dependencies[2] = {};
+	dependencies[0].srcSubpass      = VK_SUBPASS_EXTERNAL;
+	dependencies[0].dstSubpass      = 0;
+	dependencies[0].srcStageMask    = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+	dependencies[0].dstStageMask    = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+	dependencies[0].srcAccessMask   = VK_ACCESS_SHADER_READ_BIT;
+	dependencies[0].dstAccessMask   = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+	dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+    dependencies[1].srcSubpass      = 0;
+    dependencies[1].dstSubpass      = VK_SUBPASS_EXTERNAL;
+    dependencies[1].srcStageMask    = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependencies[1].dstStageMask    = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependencies[1].srcAccessMask   = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencies[1].dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
+    dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+	VkRenderPassCreateInfo create_info = {};
+	create_info.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	create_info.attachmentCount = 1;
+	create_info.pAttachments    = &attachment;
+	create_info.subpassCount    = 1;
+	create_info.pSubpasses      = &subpass;
+	create_info.dependencyCount = 2;
+	create_info.pDependencies   = dependencies;
+
+	VK_CHECK( vkCreateRenderPass(context.device, &create_info, nullptr, &prepass_render_pass) );
+	LOG_INFO("Prepass renderpass created");
+
+    // create framebuffer
+    for (i32 i = 0; i < BUFFERED_FRAMES; ++i)
+    {
+        create_image(context, VK_IMAGE_TYPE_2D, VK_FORMAT_D32_SFLOAT,
+                context.swapchain.extent.width, context.swapchain.extent.height,
+                VkImageUsageFlagBits(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT),
+                VK_IMAGE_ASPECT_DEPTH_BIT,
+                &depth_attachment[i]);
+        create_sampler(context, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, &depth_sampler[i]);
+
+		VkFramebufferCreateInfo info = {};
+		info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		info.renderPass = prepass_render_pass;
+		info.attachmentCount = 1;
+		info.pAttachments = &depth_attachment[i].view;
+		info.width  = context.swapchain.extent.width;
+		info.height = context.swapchain.extent.height;
+		info.layers = 1;
+
+		VK_CHECK( vkCreateFramebuffer(context.device, &info, nullptr, &prepass_framebuffer[i]) );
+    }
+    LOG_INFO("Prepass framebuffers created");
+}
+
 renderer_t::renderer_t(window_t* _window) : window(_window)
 {
     init_context(context, window);
@@ -33,14 +109,13 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
     //staging = staging_buffer_t(&context);
     init_staging_buffer(staging, &context);
     init_descriptor_allocator(context.device, MAX_DESCRIPTOR_SETS,  &descriptor_allocator);
-
-    //create_render_pass(context, &render_pass);
+    create_prepass_render_pass();
     
     // create descriptor layouts for pipelines
     // set 0 
     set_layouts.resize(6);
     auto& layout_set0 = set_layouts[0];
-    add_binding(layout_set0, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_RAYGEN_BIT_KHR);
+    add_binding(layout_set0, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_RAYGEN_BIT_KHR);
     add_binding(layout_set0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
     add_binding(layout_set0, 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_VERTEX_BIT   | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
     add_binding(layout_set0, 3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
@@ -73,14 +148,15 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
     add_binding(layout_set5, 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
     build_descriptor_set_layout(context.device, layout_set5);
     
-    // create graphics pipeline
-    if (0) {
+    // create prepass pipeline
+    {
         pipeline_description_t pipeline_description;
         init_graphics_pipeline_description(context, pipeline_description);
-        add_shader(pipeline_description, VK_SHADER_STAGE_VERTEX_BIT,   "main", "shaders/pbr.vert.spv");
-        add_shader(pipeline_description, VK_SHADER_STAGE_FRAGMENT_BIT, "main", "shaders/pbr.frag.spv");
-        graphics_pipeline.descriptor_set_layouts.push_back(layout_set0.handle);
-        build_graphics_pipeline(context, pipeline_description, graphics_pipeline);
+        add_shader(pipeline_description, VK_SHADER_STAGE_VERTEX_BIT,   "main", "shaders/prepass.vert.spv");
+//        add_shader(pipeline_description, VK_SHADER_STAGE_FRAGMENT_BIT, "main", "shaders/prepass.frag.spv");
+        pipeline_description.render_pass = prepass_render_pass;
+        prepass_pipeline.descriptor_set_layouts.push_back(layout_set0.handle); // dont care
+        build_graphics_pipeline(context, pipeline_description, prepass_pipeline);
     }
 
     // create rt pipeline
@@ -162,6 +238,17 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
         // todo: create sepearate renderpass (no depth buffer needed for this pipeline);
         build_graphics_pipeline(context, post_pipeline_description, post_pipeline);
     }
+
+    // debug
+    {
+        pipeline_description_t pipeline_description;
+        init_graphics_pipeline_description(context, pipeline_description);
+        add_shader(pipeline_description, VK_SHADER_STAGE_VERTEX_BIT, "main", "shaders/post.vert.spv");
+        add_shader(pipeline_description, VK_SHADER_STAGE_FRAGMENT_BIT, "main", "shaders/debug.frag.spv");
+        pipeline_description.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+        debug_pipeline.descriptor_set_layouts.push_back(layout_set2.handle);
+        build_graphics_pipeline(context, pipeline_description, debug_pipeline);
+    }
 }
 
 void renderer_t::update_descriptors(scene_t& scene)
@@ -236,6 +323,11 @@ void renderer_t::update_descriptors(scene_t& scene)
         bind_buffer(set5, 2, &sbo_light_tree_info);
         frame_resources[i].descriptor_sets.push_back(build_descriptor_set(descriptor_allocator, set5));
 
+        descriptor_set_t set6(set_layouts[2]); // same descriptor layout
+        VkDescriptorImageInfo depth_attachment_info = { depth_sampler[i], depth_attachment[i].view, VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL };
+        bind_image(set6, 0, &depth_attachment_info);
+        frame_resources[i].descriptor_sets.push_back(build_descriptor_set(descriptor_allocator, set6));
+
         // create sync objects (todo: move this)
         VkSemaphoreCreateInfo semaphore_info = {};
         semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -246,6 +338,7 @@ void renderer_t::update_descriptors(scene_t& scene)
         for (size_t i = 0; i < frame_resources.size(); i++)
         {
             VK_CHECK( vkCreateSemaphore(context.device, &semaphore_info, nullptr, &frame_resources[i].rt_semaphore) );
+            VK_CHECK( vkCreateSemaphore(context.device, &semaphore_info, nullptr, &frame_resources[i].prepass_semaphore) );
             VK_CHECK( vkCreateFence(context.device, &fence_info, nullptr, &frame_resources[i].rt_fence) );
         }
 
@@ -287,6 +380,7 @@ void renderer_t::update_descriptors(scene_t& scene)
         alloc.commandBufferCount = 1;
 
         VK_CHECK( vkAllocateCommandBuffers(context.device, &alloc, &frame_resources[i].cmd) );
+        VK_CHECK( vkAllocateCommandBuffers(context.device, &alloc, &frame_resources[i].cmd_prepass) );
     }
     end_upload(staging); // uploaded to transfer
     end_and_submit_command_buffer(cmd, context.q_compute);
@@ -322,13 +416,12 @@ renderer_t::~renderer_t()
 
     vkDestroyDescriptorPool(context.device, descriptor_allocator.descriptor_pool, nullptr);
     LOG_INFO("Destroy pipelines");
-    //destroy_pipeline(context, &graphics_pipeline);
     destroy_pipeline(context, &rtx_pipeline);
     //destroy_staging_buffer(staging);
     destroy_context(context);
 }
 
-void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
+void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t state)
 {
     static bool mat_uploaded[2] = {false, false};
     VkResult res;
@@ -396,6 +489,50 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         VkSemaphore upload_complete;
         end_upload(staging, &upload_complete);
     
+        { // prepass
+            auto cmd = frame_resources[frame_index].cmd_prepass;
+            VK_CHECK( begin_command_buffer(cmd) );
+            VkClearValue clear = {};
+            clear.depthStencil = {1, 0};
+
+            VkRenderPassBeginInfo begin_info{};
+            begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+            begin_info.pNext = nullptr;
+            begin_info.renderPass = prepass_render_pass;
+            begin_info.framebuffer = prepass_framebuffer[frame_index];
+            begin_info.renderArea = { {0,0}, context.swapchain.extent };
+            begin_info.clearValueCount = 1;
+            begin_info.pClearValues = &clear;
+            vkCmdBeginRenderPass(cmd, &begin_info, VK_SUBPASS_CONTENTS_INLINE);
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, prepass_pipeline.handle);
+            u32 first_instance_id = 0;
+            VkDeviceSize offsets[1] = {0};
+            vkCmdBindVertexBuffers(cmd, 0, 1, &scene.vbo.handle, offsets);
+            vkCmdBindIndexBuffer(cmd, scene.ibo.handle, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, prepass_pipeline.layout, 0,
+                    1, &frame_resources[frame_index].descriptor_sets[0], 0, nullptr);
+
+            for (auto const& batch : batches)
+            {
+                auto& mesh = meshes[batch.mesh_id];
+                vkCmdDrawIndexed(cmd, mesh.index_count, batch.instance_count, 
+                        mesh.index_offset, mesh.vertex_offset, first_instance_id);
+                first_instance_id += batch.instance_count;
+            }
+            vkCmdEndRenderPass(cmd);
+            VK_CHECK( vkEndCommandBuffer(cmd) );
+            VkSubmitInfo submit_info = {};
+            submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+            submit_info.pNext = nullptr;
+            submit_info.waitSemaphoreCount = 0;
+            submit_info.commandBufferCount = 1;
+            submit_info.pCommandBuffers = &cmd;
+            submit_info.signalSemaphoreCount = 1;
+            submit_info.pSignalSemaphores = &frame_resources[frame_index].prepass_semaphore;
+
+            VK_CHECK( vkQueueSubmit(context.q_graphics, 1, &submit_info, nullptr) );
+        }
+
         // begin recording commands
         //VkCommandBuffer cmd = frame_resources[frame_index].comp_cmd;
         VkCommandBuffer cmd = frame->command_buffer;
@@ -639,19 +776,35 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera)
         VkClearValue clear[2];
         clear[0].color = {0, 0, 0, 0};
         clear[1].depthStencil = {1, 0};
-        begin_render_pass(context, cmd, clear, 2);
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, post_pipeline.handle);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, post_pipeline.layout, 0,
-                1, &frame_resources[frame_index].descriptor_sets[2], 0, nullptr);
+        begin_render_pass(context, cmd, clear, 2); 
+        if (!state.render_depth_buffer)
+        {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, post_pipeline.handle);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, post_pipeline.layout, 0,
+                    1, &frame_resources[frame_index].descriptor_sets[2], 0, nullptr);
+        } 
+        else 
+        {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_pipeline.handle);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_pipeline.layout, 0,
+                    1, &frame_resources[frame_index].descriptor_sets[6], 0, nullptr);
+            struct {
+                f32 znear;
+                f32 zfar;
+            } constants;
+            constants.znear = camera.znear;
+            constants.zfar = camera.zfar;
+            vkCmdPushConstants(cmd, debug_pipeline.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(constants), &constants);
+        }
         vkCmdDraw(cmd, 4, 1, 0, 0);
-
         vkCmdEndRenderPass(cmd);
         VK_CHECK( vkEndCommandBuffer(cmd) );
 
-        VkPipelineStageFlags _dst_wait_mask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
-        submit_info.waitSemaphoreCount = 1;
-        submit_info.pWaitSemaphores = &frame_resources[frame_index].rt_semaphore;
-        submit_info.pWaitDstStageMask = &_dst_wait_mask;
+        VkPipelineStageFlags _dst_wait_mask[2] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT };
+        VkSemaphore wait_semaphores[2] = {frame_resources[frame_index].rt_semaphore, frame_resources[frame_index].prepass_semaphore};
+        submit_info.waitSemaphoreCount = 2;
+        submit_info.pWaitSemaphores = wait_semaphores;
+        submit_info.pWaitDstStageMask = _dst_wait_mask;
         submit_info.signalSemaphoreCount = 1;
         submit_info.pSignalSemaphores = &frame->render_semaphore;
         submit_info.pCommandBuffers = &cmd;

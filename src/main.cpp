@@ -95,7 +95,7 @@ int main()
     // create descriptor sets;
     renderer.update_descriptors(scene);
 
-    camera.position = vec3(0, 3, -5);
+    camera.position = vec3(0, 3, 0);
     camera.lookat(vec3(0, 0, 4));
     camera.update(0, window);
     
@@ -103,6 +103,8 @@ int main()
     frame_time_t time;
     bool run = true;
     bool pause = false;
+    render_state_t render_state;
+    render_state.render_depth_buffer = false;
     while(run)
     {
         update_time(time, 1.0/144.0);
@@ -120,12 +122,15 @@ int main()
             pause = !pause;
             LOG_INFO(pause ? "paused" : "resumed");
         }
+        if (is_key_pressed(window, KEY_0))
+        {
+            render_state.render_depth_buffer = !render_state.render_depth_buffer;
+        }
         
         if (!pause) 
         {
             camera.update(dt, window);
-#if 0
-            if (is_key_down(window, KEY_W))
+            if (is_key_down(window, KEY_ARROW_UP))
             {
                 for (auto& entity : scene.entities) 
                 {
@@ -133,7 +138,7 @@ int main()
                     entity.m_model = translate4x4(0, 2*dt, 0) * m;
                 }
             }
-            if (is_key_down(window, KEY_S))
+            if (is_key_down(window, KEY_ARROW_DOWN))
             {
                 for (auto& entity : scene.entities)
                 {
@@ -141,10 +146,9 @@ int main()
                     entity.m_model = translate4x4(0, -2*dt, 0) * m;
                 }
             }
-#endif
             scene.entities[1].m_model *= rotate4x4_y(dt);
             update_acceleration_structures(renderer.context, scene);
-            renderer.draw_scene(scene, camera);
+            renderer.draw_scene(scene, camera, render_state);
         }
     }
 

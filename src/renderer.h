@@ -29,8 +29,17 @@ struct frame_resource_t
     // syncs
     VkFence rt_fence;
     VkSemaphore rt_semaphore;
+    VkSemaphore prepass_semaphore;
 
     VkCommandBuffer cmd;
+    VkCommandBuffer cmd_prepass;
+};
+
+// config for what to render or to input into push_constants
+// that can be changed at runtime
+struct render_state_t
+{
+    bool render_depth_buffer;
 };
 
 struct renderer_t
@@ -38,7 +47,14 @@ struct renderer_t
     window_t*              window;
     gpu_context_t          context;
     profiler_t             profiler;
-    pipeline_t             graphics_pipeline;
+   
+    image_t                depth_attachment[BUFFERED_FRAMES];
+    VkSampler              depth_sampler[BUFFERED_FRAMES];
+    VkFramebuffer          prepass_framebuffer[BUFFERED_FRAMES];
+    VkRenderPass           prepass_render_pass;
+
+    pipeline_t             prepass_pipeline;
+    pipeline_t             debug_pipeline;
     pipeline_t             rtx_pipeline;
     pipeline_t             post_pipeline;
     
@@ -57,8 +73,9 @@ struct renderer_t
     renderer_t(window_t* _window);
     ~renderer_t();
 
-    void draw_scene(scene_t& scene, camera_t& camera);
+    void draw_scene(scene_t& scene, camera_t& camera, render_state_t state);
     void update_descriptors(scene_t& scene);
+    void create_prepass_render_pass();
 };
 
 #endif // RENDERER_H

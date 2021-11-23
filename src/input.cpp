@@ -18,7 +18,12 @@ void input_manager_t::init(xcb_connection_t* con)
 		{ KEY_S, XK_s },
 		{ KEY_D, XK_d },
 		{ KEY_ESC, XK_Escape },
-		{ KEY_P, XK_p }
+		{ KEY_P, XK_p },
+		{ KEY_0, XK_0 },
+		{ KEY_ARROW_UP, XK_Up },
+		{ KEY_ARROW_DOWN, XK_Down },
+		{ KEY_ARROW_LEFT, XK_Left },
+		{ KEY_ARROW_RIGHT, XK_Right },
 	};
 	size_t keys_count = sizeof(key_mapping) / sizeof(key_mapping_t);
 
@@ -50,6 +55,7 @@ void input_manager_t::init(xcb_connection_t* con)
 				{
 					keycode_map[keycode] = key_mapping[k].key;
                     keyboard[key_mapping[k].key] = UNKOWN;
+                    LOG_INFO("key %d mapped to %d", key_mapping[k].key, keycode);
 					break;
 				}
 			}

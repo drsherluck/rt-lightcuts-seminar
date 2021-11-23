@@ -7,13 +7,20 @@
 #include <set>
 #include <unordered_map>
 
+#define NUM_KEYS 11
 #define KEY_W   0
 #define KEY_A   1
 #define KEY_S   2
 #define KEY_D   3
 #define KEY_ESC 4
 #define KEY_P   5
+#define KEY_0   6
+#define KEY_ARROW_UP    7
+#define KEY_ARROW_DOWN  8
+#define KEY_ARROW_LEFT  9
+#define KEY_ARROW_RIGHT 10
 
+#define NUM_BUTTONS 2
 #define MOUSE_BUTTON_1 0
 #define MOUSE_BUTTON_2 1
 
@@ -30,8 +37,8 @@ struct window_t;
 struct input_manager_t
 {
 	std::unordered_map<xcb_keycode_t, u32> keycode_map;
-    key_state_t keyboard[6];
-    key_state_t mouse[2];
+    key_state_t keyboard[NUM_KEYS];
+    key_state_t mouse[NUM_BUTTONS];
 	v2 prev_mouse_pos;
 	v2 curr_mouse_pos;
 	bool pointer_inside_window;
