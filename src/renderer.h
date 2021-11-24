@@ -55,6 +55,9 @@ struct renderer_t
     VkSampler              depth_sampler[BUFFERED_FRAMES];
     VkFramebuffer          prepass_framebuffer[BUFFERED_FRAMES];
     VkRenderPass           prepass_render_pass;
+    
+    VkFramebuffer          bbox_framebuffers[BUFFERED_FRAMES];
+    VkRenderPass           bbox_render_pass;
 
     pipeline_t             prepass_pipeline;
     pipeline_t             debug_pipeline;
@@ -81,6 +84,7 @@ struct renderer_t
     void draw_scene(scene_t& scene, camera_t& camera, render_state_t state);
     void update_descriptors(scene_t& scene);
     void create_prepass_render_pass();
+    void create_bbox_render_pass();
 };
 
 #endif // RENDERER_H

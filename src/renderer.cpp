@@ -102,6 +102,105 @@ void renderer_t::create_prepass_render_pass()
     LOG_INFO("Prepass framebuffers created");
 }
 
+void renderer_t::create_bbox_render_pass()
+{
+    // create render pass;
+    VkAttachmentDescription attachment[2] = {};
+	attachment[0].format         = VK_FORMAT_D32_SFLOAT; 
+	attachment[0].samples        = VK_SAMPLE_COUNT_1_BIT;
+	attachment[0].loadOp         = VK_ATTACHMENT_LOAD_OP_LOAD; // use prepass depth
+	attachment[0].storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
+	attachment[0].stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	attachment[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachment[0].initialLayout  = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+	attachment[0].finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+
+	attachment[1].format         = VK_FORMAT_R32G32B32A32_SFLOAT; 
+	attachment[1].samples        = VK_SAMPLE_COUNT_1_BIT;
+	attachment[1].loadOp         = VK_ATTACHMENT_LOAD_OP_LOAD; // use rendered image from rtx pipeline
+	attachment[1].storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
+	attachment[1].stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	attachment[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachment[1].initialLayout  = VK_IMAGE_LAYOUT_GENERAL;
+	attachment[1].finalLayout    = VK_IMAGE_LAYOUT_GENERAL;
+
+	VkAttachmentReference depth_ref =  {};
+    depth_ref.attachment = 0;
+    depth_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    
+	VkAttachmentReference color_ref =  {};
+    color_ref.attachment = 1;
+    color_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+
+	VkSubpassDescription subpass = {};
+	subpass.pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.inputAttachmentCount    = 0;
+	subpass.colorAttachmentCount    = 1;
+	subpass.pColorAttachments       = &color_ref;
+	subpass.pDepthStencilAttachment = &depth_ref;
+
+    VkSubpassDependency dependencies[3] = {};
+	dependencies[0].srcSubpass      = VK_SUBPASS_EXTERNAL;
+	dependencies[0].dstSubpass      = 0;
+	dependencies[0].srcStageMask    = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+	dependencies[0].dstStageMask    = VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+	dependencies[0].srcAccessMask   = VK_ACCESS_SHADER_READ_BIT;
+	dependencies[0].dstAccessMask   = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+	dependencies[0].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+
+    dependencies[1].srcSubpass      = 0;
+    dependencies[1].dstSubpass      = VK_SUBPASS_EXTERNAL;
+    dependencies[1].srcStageMask    = VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    dependencies[1].dstStageMask    = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    dependencies[1].srcAccessMask   = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    dependencies[1].dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
+    dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
+    
+	dependencies[2].srcSubpass      = VK_SUBPASS_EXTERNAL;
+	dependencies[2].dstSubpass      = 0;
+	dependencies[2].srcStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	dependencies[2].dstStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	dependencies[2].srcAccessMask   = 0;
+	dependencies[2].dstAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	dependencies[2].dependencyFlags = 0;
+
+
+	VkRenderPassCreateInfo create_info = {};
+	create_info.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+	create_info.attachmentCount = 2;
+	create_info.pAttachments    = attachment;
+	create_info.subpassCount    = 1;
+	create_info.pSubpasses      = &subpass;
+	create_info.dependencyCount = 3;
+	create_info.pDependencies   = dependencies;
+
+	VK_CHECK( vkCreateRenderPass(context.device, &create_info, nullptr, &bbox_render_pass) );
+	LOG_INFO("Prepass renderpass created");
+
+    // create framebuffer
+    for (i32 i = 0; i < BUFFERED_FRAMES; ++i)
+    {
+        create_image(context, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, context.swapchain.extent.width, context.swapchain.extent.height, 
+                VkImageUsageFlagBits(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT),  VK_IMAGE_ASPECT_COLOR_BIT, 
+                &frame_resources[i].storage_image);
+        create_sampler(context, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, &frame_resources[i].storage_image_sampler);
+
+        VkImageView attachments[2] = { depth_attachment[i].view, frame_resources[i].storage_image.view };
+		VkFramebufferCreateInfo info = {};
+		info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+		info.renderPass = bbox_render_pass;
+		info.attachmentCount = 2;
+		info.pAttachments = attachments;
+		info.width  = context.swapchain.extent.width;
+		info.height = context.swapchain.extent.height;
+		info.layers = 1;
+
+		VK_CHECK( vkCreateFramebuffer(context.device, &info, nullptr, &bbox_framebuffers[i]) );
+    }
+    LOG_INFO("Prepass framebuffers created");
+}
+
 renderer_t::renderer_t(window_t* _window) : window(_window)
 {
     init_context(context, window);
@@ -109,7 +208,9 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
     //staging = staging_buffer_t(&context);
     init_staging_buffer(staging, &context);
     init_descriptor_allocator(context.device, MAX_DESCRIPTOR_SETS,  &descriptor_allocator);
+    frame_resources.resize(context.frames.size());
     create_prepass_render_pass();
+    create_bbox_render_pass();
     
     // create descriptor layouts for pipelines
     // set 0 
@@ -272,6 +373,7 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
         pipeline_description.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
         pipeline_description.polygon_mode = VK_POLYGON_MODE_LINE;
         pipeline_description.cull_mode = VK_CULL_MODE_NONE;
+        pipeline_description.render_pass = bbox_render_pass;
         bbox_pipeline.descriptor_set_layouts.push_back(layout_set0.handle); // need cameraubo
         build_graphics_pipeline(context, pipeline_description, bbox_pipeline);
     }
@@ -281,7 +383,6 @@ void renderer_t::update_descriptors(scene_t& scene)
 {
     VkCommandBuffer cmd = begin_one_time_command_buffer(context, context.frames[0].command_pool);
     begin_upload(staging);
-    frame_resources.resize(context.frames.size());
     for (size_t i = 0; i < context.frames.size(); ++i)
     {
         // set 0
@@ -311,10 +412,10 @@ void renderer_t::update_descriptors(scene_t& scene)
 
         // set 1
         create_buffer(context, sizeof(scene_info_t), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, &frame_resources[i].ubo_scene);
-        create_image(context, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, context.swapchain.extent.width, context.swapchain.extent.height, 
-                VkImageUsageFlagBits(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT),  VK_IMAGE_ASPECT_COLOR_BIT, 
-                &frame_resources[i].storage_image);
-        create_sampler(context, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, &frame_resources[i].storage_image_sampler);
+        //create_image(context, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT, context.swapchain.extent.width, context.swapchain.extent.height, 
+        //        VkImageUsageFlagBits(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_STORAGE_BIT | VK_IMAGE_USAGE_SAMPLED_BIT),  VK_IMAGE_ASPECT_COLOR_BIT, 
+        //        &frame_resources[i].storage_image);
+        //create_sampler(context, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, &frame_resources[i].storage_image_sampler);
         VkDescriptorImageInfo  storage_image_info = { frame_resources[i].storage_image_sampler, frame_resources[i].storage_image.view, VK_IMAGE_LAYOUT_GENERAL };
         VkDescriptorBufferInfo ubo_scene_info = { frame_resources[i].ubo_scene.handle, 0, VK_WHOLE_SIZE };
 
@@ -831,55 +932,56 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
         }
 
         cmd = frame_resources[frame_index].cmd;
-        if (1)
+        VK_CHECK( begin_command_buffer(cmd) ); 
+        // clear shouldn't matter 
+        VkClearValue clear[2];
+        clear[0].color = {0, 0, 0, 0};
+        clear[1].depthStencil = {1, 0};
+
+        VkRenderPassBeginInfo begin_info = {};
+        begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        begin_info.renderPass = bbox_render_pass;
+        begin_info.framebuffer = bbox_framebuffers[frame_index];
+        begin_info.renderArea = { {0,0}, context.swapchain.extent };
+        begin_info.clearValueCount = 2;
+        begin_info.pClearValues = clear;
+        vkCmdBeginRenderPass(cmd, &begin_info, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bbox_pipeline.handle);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bbox_pipeline.layout, 0,
+                1, &frame_resources[frame_index].descriptor_sets[0], 0, nullptr);
+        VkDeviceSize offsets[1] = {0};
+        vkCmdBindVertexBuffers(cmd, 0, 1, &frame_resources[frame_index].vbo_lines.handle, offsets);
+        u32 h = static_cast<u32>(log2(num_leaf_nodes));
+        u32 vertex_count = 24 * ((1 << h) - 1);
+        vkCmdDraw(cmd, vertex_count, 1, 0, 0);
+        vkCmdEndRenderPass(cmd);
+
+        //VkClearValue clear[2];
+        //clear[0].color = {0, 0, 0, 0};
+        //clear[1].depthStencil = {1, 0};
+        begin_render_pass(context, cmd, clear, 2); 
+        if (!state.render_depth_buffer)
         {
-            VK_CHECK( begin_command_buffer(cmd) ); 
-            VkClearValue clear[2];
-            clear[0].color = {0, 0, 0, 0};
-            clear[1].depthStencil = {1, 0};
-            begin_render_pass(context, cmd, clear, 2); 
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bbox_pipeline.handle);
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bbox_pipeline.layout, 0,
-                    1, &frame_resources[frame_index].descriptor_sets[0], 0, nullptr);
-            VkDeviceSize offsets[1] = {0};
-            vkCmdBindVertexBuffers(cmd, 0, 1, &frame_resources[frame_index].vbo_lines.handle, offsets);
-            u32 h = static_cast<u32>(log2(num_leaf_nodes));
-            u32 vertex_count = 24 * ((1 << h) - 1);
-            vkCmdDraw(cmd, vertex_count, 1, 0, 0);
-            vkCmdEndRenderPass(cmd);
-            VK_CHECK( vkEndCommandBuffer(cmd) );
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, post_pipeline.handle);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, post_pipeline.layout, 0,
+                    1, &frame_resources[frame_index].descriptor_sets[2], 0, nullptr);
         } 
         else 
         {
-            //cmd = frame_resources[frame_index].cmd;
-            VK_CHECK( begin_command_buffer(cmd) ); 
-            VkClearValue clear[2];
-            clear[0].color = {0, 0, 0, 0};
-            clear[1].depthStencil = {1, 0};
-            begin_render_pass(context, cmd, clear, 2); 
-            if (!state.render_depth_buffer)
-            {
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, post_pipeline.handle);
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, post_pipeline.layout, 0,
-                        1, &frame_resources[frame_index].descriptor_sets[2], 0, nullptr);
-            } 
-            else 
-            {
-                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_pipeline.handle);
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_pipeline.layout, 0,
-                        1, &frame_resources[frame_index].descriptor_sets[6], 0, nullptr);
-                struct {
-                    f32 znear;
-                    f32 zfar;
-                } constants;
-                constants.znear = camera.znear;
-                constants.zfar = camera.zfar;
-                vkCmdPushConstants(cmd, debug_pipeline.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(constants), &constants);
-            }
-            vkCmdDraw(cmd, 4, 1, 0, 0);
-            vkCmdEndRenderPass(cmd);
-            VK_CHECK( vkEndCommandBuffer(cmd) );
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_pipeline.handle);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_pipeline.layout, 0,
+                    1, &frame_resources[frame_index].descriptor_sets[6], 0, nullptr);
+            struct {
+                f32 znear;
+                f32 zfar;
+            } constants;
+            constants.znear = camera.znear;
+            constants.zfar = camera.zfar;
+            vkCmdPushConstants(cmd, debug_pipeline.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(constants), &constants);
         }
+        vkCmdDraw(cmd, 4, 1, 0, 0);
+        vkCmdEndRenderPass(cmd);
+        VK_CHECK( vkEndCommandBuffer(cmd) );
 
         VkPipelineStageFlags _dst_wait_mask[2] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT };
         VkSemaphore wait_semaphores[2] = {frame_resources[frame_index].rt_semaphore, frame_resources[frame_index].prepass_semaphore};
