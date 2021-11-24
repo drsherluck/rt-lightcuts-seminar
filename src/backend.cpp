@@ -339,6 +339,7 @@ void init_context(gpu_context_t& ctx, window_t* window)
     features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     features.pNext = &buffer_address_features;
     features.features.shaderInt64 = VK_TRUE;
+    features.features.fillModeNonSolid = VK_TRUE;
 	//features.samplerAnisotropy = VK_TRUE;
     
 	// logical device 

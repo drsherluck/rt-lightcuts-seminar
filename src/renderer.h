@@ -26,6 +26,9 @@ struct frame_resource_t
     buffer_t sbo_encoded_lights;
     buffer_t sbo_light_tree;
 
+    // here are bbox lines writen
+    buffer_t vbo_lines;
+
     // syncs
     VkFence rt_fence;
     VkSemaphore rt_semaphore;
@@ -57,12 +60,14 @@ struct renderer_t
     pipeline_t             debug_pipeline;
     pipeline_t             rtx_pipeline;
     pipeline_t             post_pipeline;
+    pipeline_t             bbox_pipeline;
     
     // compute pipelines
     pipeline_t             morton_compute_pipeline;
     pipeline_t             sort_compute_pipeline;
     pipeline_t             tree_leafs_compute_pipeline;
     pipeline_t             tree_compute_pipeline;
+    pipeline_t             bbox_lines_pso;
     shader_binding_table_t sbt;
     staging_buffer_t       staging;
 

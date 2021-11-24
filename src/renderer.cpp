@@ -16,8 +16,8 @@
 #define MAX_DESCRIPTOR_SETS 50
 #define MAX_ENTITIES 100
 #define MAX_TREE_HEIGTH 20
-#define MAX_LIGHTS (1 << 20)
-#define MAX_LIGHT_TREE_SIZE (1 << 21)
+#define MAX_LIGHTS (1 << 17)
+#define MAX_LIGHT_TREE_SIZE (1 << 18)
 
 // todo: remove
 struct batch_t 
@@ -113,7 +113,7 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
     
     // create descriptor layouts for pipelines
     // set 0 
-    set_layouts.resize(6);
+    set_layouts.resize(7);
     auto& layout_set0 = set_layouts[0];
     add_binding(layout_set0, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_RAYGEN_BIT_KHR);
     add_binding(layout_set0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
@@ -147,13 +147,18 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
     add_binding(layout_set5, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
     add_binding(layout_set5, 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
     build_descriptor_set_layout(context.device, layout_set5);
+
+    // set 6 (write vbo lines compute shader)
+    auto& layout_set6 = set_layouts[6];
+    add_binding(layout_set6, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
+    add_binding(layout_set6, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
+    build_descriptor_set_layout(context.device, layout_set6);
     
     // create prepass pipeline
     {
         pipeline_description_t pipeline_description;
         init_graphics_pipeline_description(context, pipeline_description);
         add_shader(pipeline_description, VK_SHADER_STAGE_VERTEX_BIT,   "main", "shaders/prepass.vert.spv");
-//        add_shader(pipeline_description, VK_SHADER_STAGE_FRAGMENT_BIT, "main", "shaders/prepass.frag.spv");
         pipeline_description.render_pass = prepass_render_pass;
         prepass_pipeline.descriptor_set_layouts.push_back(layout_set0.handle); // dont care
         build_graphics_pipeline(context, pipeline_description, prepass_pipeline);
@@ -249,6 +254,27 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
         debug_pipeline.descriptor_set_layouts.push_back(layout_set2.handle);
         build_graphics_pipeline(context, pipeline_description, debug_pipeline);
     }
+
+    // compute shader to write bbox lines to a buffer
+    {
+        compute_pipeline_description_t compute_description;
+        add_shader(compute_description, "main", "shaders/bbox_lines.comp.spv");
+        compute_description.descriptor_set_layouts.push_back(layout_set6.handle);
+        build_compute_pipeline(context, compute_description, &bbox_lines_pso);
+    }
+
+    // bbox visualizer
+    {
+        pipeline_description_t pipeline_description;
+        init_graphics_pipeline_description(context, pipeline_description);
+        add_shader(pipeline_description, VK_SHADER_STAGE_VERTEX_BIT, "main", "shaders/bbox.vert.spv");
+        add_shader(pipeline_description, VK_SHADER_STAGE_FRAGMENT_BIT, "main", "shaders/bbox.frag.spv");
+        pipeline_description.topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+        pipeline_description.polygon_mode = VK_POLYGON_MODE_LINE;
+        pipeline_description.cull_mode = VK_CULL_MODE_NONE;
+        bbox_pipeline.descriptor_set_layouts.push_back(layout_set0.handle); // need cameraubo
+        build_graphics_pipeline(context, pipeline_description, bbox_pipeline);
+    }
 }
 
 void renderer_t::update_descriptors(scene_t& scene)
@@ -328,6 +354,14 @@ void renderer_t::update_descriptors(scene_t& scene)
         bind_image(set6, 0, &depth_attachment_info);
         frame_resources[i].descriptor_sets.push_back(build_descriptor_set(descriptor_allocator, set6));
 
+        // buffer for lines
+        create_buffer(context, MAX_LIGHTS * sizeof(v4) * 12 * 2, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &frame_resources[i].vbo_lines);
+        VkDescriptorBufferInfo line_vbo_info = { frame_resources[i].vbo_lines.handle, 0, VK_WHOLE_SIZE };
+        descriptor_set_t set7(set_layouts[6]);
+        bind_buffer(set7, 0, &sbo_light_tree_info);
+        bind_buffer(set7, 1, &line_vbo_info);
+        frame_resources[i].descriptor_sets.push_back(build_descriptor_set(descriptor_allocator, set7));
+        
         // create sync objects (todo: move this)
         VkSemaphoreCreateInfo semaphore_info = {};
         semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -676,6 +710,31 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
             CHECKPOINT(cmd, "[POST] LIGHT TREE BUILD");
         }
 
+        if (1) 
+        {
+            // write lines to vbo for debuging
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, bbox_lines_pso.handle);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_COMPUTE, bbox_lines_pso.layout, 0, 
+                    1, &frame_resources[frame_index].descriptor_sets[7], 0, nullptr);
+            struct {
+                i32 total_nodes;
+                i32 offset;
+            } constants;
+            i32 h = static_cast<i32>(log2(num_leaf_nodes));
+            constants.total_nodes = (1 << h) - 1;
+            constants.offset = num_leaf_nodes;
+            vkCmdPushConstants(cmd, bbox_lines_pso.layout, VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(constants), &constants);
+            u32 threads = MAX(static_cast<u32>(constants.total_nodes)/512, 1);
+            vkCmdDispatch(cmd, threads, 1, 1);
+            VkMemoryBarrier barrier = {};
+            barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+            barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                    VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT, 
+                    0, 1, &barrier, 0, nullptr, 0, nullptr);
+        }
+
         // render using light tree
         if (ENABLE_RTX)
         {
@@ -770,35 +829,57 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
             context.allocator.unmap_memory(local.allocation);
             abort();
         }
-       
+
         cmd = frame_resources[frame_index].cmd;
-        VK_CHECK( begin_command_buffer(cmd) ); 
-        VkClearValue clear[2];
-        clear[0].color = {0, 0, 0, 0};
-        clear[1].depthStencil = {1, 0};
-        begin_render_pass(context, cmd, clear, 2); 
-        if (!state.render_depth_buffer)
+        if (1)
         {
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, post_pipeline.handle);
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, post_pipeline.layout, 0,
-                    1, &frame_resources[frame_index].descriptor_sets[2], 0, nullptr);
+            VK_CHECK( begin_command_buffer(cmd) ); 
+            VkClearValue clear[2];
+            clear[0].color = {0, 0, 0, 0};
+            clear[1].depthStencil = {1, 0};
+            begin_render_pass(context, cmd, clear, 2); 
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bbox_pipeline.handle);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bbox_pipeline.layout, 0,
+                    1, &frame_resources[frame_index].descriptor_sets[0], 0, nullptr);
+            VkDeviceSize offsets[1] = {0};
+            vkCmdBindVertexBuffers(cmd, 0, 1, &frame_resources[frame_index].vbo_lines.handle, offsets);
+            u32 h = static_cast<u32>(log2(num_leaf_nodes));
+            u32 vertex_count = 24 * ((1 << h) - 1);
+            vkCmdDraw(cmd, vertex_count, 1, 0, 0);
+            vkCmdEndRenderPass(cmd);
+            VK_CHECK( vkEndCommandBuffer(cmd) );
         } 
         else 
         {
-            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_pipeline.handle);
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_pipeline.layout, 0,
-                    1, &frame_resources[frame_index].descriptor_sets[6], 0, nullptr);
-            struct {
-                f32 znear;
-                f32 zfar;
-            } constants;
-            constants.znear = camera.znear;
-            constants.zfar = camera.zfar;
-            vkCmdPushConstants(cmd, debug_pipeline.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(constants), &constants);
+            //cmd = frame_resources[frame_index].cmd;
+            VK_CHECK( begin_command_buffer(cmd) ); 
+            VkClearValue clear[2];
+            clear[0].color = {0, 0, 0, 0};
+            clear[1].depthStencil = {1, 0};
+            begin_render_pass(context, cmd, clear, 2); 
+            if (!state.render_depth_buffer)
+            {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, post_pipeline.handle);
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, post_pipeline.layout, 0,
+                        1, &frame_resources[frame_index].descriptor_sets[2], 0, nullptr);
+            } 
+            else 
+            {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_pipeline.handle);
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, debug_pipeline.layout, 0,
+                        1, &frame_resources[frame_index].descriptor_sets[6], 0, nullptr);
+                struct {
+                    f32 znear;
+                    f32 zfar;
+                } constants;
+                constants.znear = camera.znear;
+                constants.zfar = camera.zfar;
+                vkCmdPushConstants(cmd, debug_pipeline.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(constants), &constants);
+            }
+            vkCmdDraw(cmd, 4, 1, 0, 0);
+            vkCmdEndRenderPass(cmd);
+            VK_CHECK( vkEndCommandBuffer(cmd) );
         }
-        vkCmdDraw(cmd, 4, 1, 0, 0);
-        vkCmdEndRenderPass(cmd);
-        VK_CHECK( vkEndCommandBuffer(cmd) );
 
         VkPipelineStageFlags _dst_wait_mask[2] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT };
         VkSemaphore wait_semaphores[2] = {frame_resources[frame_index].rt_semaphore, frame_resources[frame_index].prepass_semaphore};
@@ -815,5 +896,6 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
     //graphics_submit_frame(context, frame);
     present_frame(context, frame);
 }
+
 
 
