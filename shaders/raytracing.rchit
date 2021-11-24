@@ -106,21 +106,25 @@ void main()
     uint cut_size;
     light_cut_t light_cut[MAX_CUT_SIZE];
     selected_light_t selected_lights[MAX_CUT_SIZE];
-    gen_light_cut(world_position, light_cut, num_nodes, cut_size);
-#if 0
-    // verify that light cut consists of different nodes
+    gen_light_cut(world_position, light_cut, num_nodes, num_leaf_nodes, cut_size);
+#if 0 
+    // debug: set num_cut_nodes to number of leafes for this test
+    vec4 color = vec4(0, 0, 0, 1);
     for (int i = 0; i < cut_size; ++i)
     {
         uint id = light_cut[i].id;
-        for (int j = 0; j < cut_size; ++j)
+        if (id < (num_nodes - num_leaf_nodes))
         {
-            if (j != i && light_cut[j].id == id) 
+            switch (id)
             {
-                payload.color = vec4(1,1,0,1);
-                return;
+                case 0: color += vec4(1,0,0,0); break;
+                case 1: color += vec4(0,1,0,0); break;
+                case 2: color += vec4(0,0,1,0); break;
             }
         }
     }
+    payload.color = color;
+    return;
 #endif 
     float r = random(vec4(gl_LaunchIDEXT.xy, payload.seed, time));
     select_lights(world_position, cut_size, light_cut, selected_lights, num_nodes, num_leaf_nodes, r);
@@ -174,6 +178,7 @@ void main()
         }
         attenuation *= 1.0 / (distance * distance);
         vec3 px = light.color * attenuation * (diffuse + specular) * inv_prob;
+        
         temp_color += px;
     }
     payload.color = vec4(temp_color, 1.0);

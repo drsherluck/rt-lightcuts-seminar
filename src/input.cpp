@@ -62,6 +62,11 @@ void input_manager_t::init(xcb_connection_t* con)
 		}
 	}
 
+    for (auto& button : mouse)
+    {
+        button = UNKOWN;
+    }
+
 	prev_mouse_pos = curr_mouse_pos = vec2(-1.0f); // center of screen
 	pointer_inside_window = true;
 	free(mapping);

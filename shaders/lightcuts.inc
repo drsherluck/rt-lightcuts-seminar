@@ -71,6 +71,8 @@ float geometric_term(vec3 p, vec3 bbox_min, vec3 bbox_max)
     return max_pz * inversesqrt(max_p2.x + max_p2.y + max_pz*max_pz);
 }
 
+// todo fix
+// it is wrong
 float calc_node_error(uint id, vec3 p)
 {
     node_t node = nodes[id];
@@ -78,26 +80,28 @@ float calc_node_error(uint id, vec3 p)
     return geometric_term(p, node.bbox_min, node.bbox_max) * node.intensity / dmin2;
 }
 
-void gen_light_cut(vec3 p, inout light_cut_t light_cut[MAX_CUT_SIZE], int num_nodes, out uint selected)
+void gen_light_cut(vec3 p, inout light_cut_t light_cut[MAX_CUT_SIZE], int num_nodes, int num_leaf_nodes, out uint selected)
 {
     selected = 1;
     light_cut[0].id = 0;
+    light_cut[0].error = FLT_MAX;
     uint max_id = 0;
-    uint h = get_msb(num_nodes + 1);
     // limit to number of leaf nodes
-    uint size = min(USER_MAX_CUT, (1 << h));
+    uint size = min(USER_MAX_CUT, num_leaf_nodes);
+    int max_leaf_id = num_nodes - num_leaf_nodes;
     while (selected < size)
     {
         // replace with children
         uint id = uint(light_cut[max_id].id);
         uint lchild = ((id + 1) << 1) - 1;
         uint rchild = lchild + 1;
+        uint lidx = get_array_index(lchild, num_nodes);
+        uint ridx = get_array_index(rchild, num_nodes);
 
         light_cut[max_id].id = lchild;
-        light_cut[max_id].error = calc_node_error(get_array_index(lchild, num_nodes), p);
+        light_cut[max_id].error = calc_node_error(lidx, p);
     
         // second child added to the back
-        uint ridx = get_array_index(rchild, num_nodes);
         if (nodes[ridx].intensity > 0)
         {
             light_cut[selected].id = rchild;
@@ -111,7 +115,7 @@ void gen_light_cut(vec3 p, inout light_cut_t light_cut[MAX_CUT_SIZE], int num_no
         for (int i = 0; i < selected; ++i)
         {
             light_cut_t n = light_cut[i];
-            if (n.error > max_error)
+            if (n.error > max_error && n.id < max_leaf_id)
             {
                 max_id = i;
                 max_error = n.error;
@@ -120,6 +124,32 @@ void gen_light_cut(vec3 p, inout light_cut_t light_cut[MAX_CUT_SIZE], int num_no
     }
 }
 
+void _select_lights(vec3 p, 
+    uint light_cut_size, 
+    inout light_cut_t light_cut[MAX_CUT_SIZE], 
+    inout selected_light_t selected_lights[MAX_CUT_SIZE], 
+    int num_nodes,
+    int num_leaf_nodes,
+    float r)
+{
+    uint leaf_node_max_id =  num_nodes - num_leaf_nodes;
+    for (uint i = 0; i < light_cut_size; ++i)
+    {
+        uint id = get_array_index(light_cut[i].id, num_nodes);
+        //uint id = get_array_index(leaf_node_max_id + i, num_nodes);
+        node_t node = nodes[id];
+        if (node.intensity > 0)
+        {
+           id = node.id;
+        }
+        else
+        {
+            id = INVALID_ID;
+        }
+        selected_lights[i].id = id;
+        selected_lights[i].prob = 1.0/light_cut_size;
+    }
+}
 // get list of light samples
 void select_lights(vec3 p, 
     uint light_cut_size, 

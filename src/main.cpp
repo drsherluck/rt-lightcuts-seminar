@@ -78,10 +78,10 @@ int main()
         add_entity(scene, 0, 0, translate4x4(0, 1, 4) * scale4x4(0.5) * rotate4x4_y(radians(45)));
         add_entity(scene, 1, 1, translate4x4(0, -0.5, 4) * scale4x4(2));
 #if !USE_RANDOM_LIGHTS
-        add_light(scene, vec3(-1, 3, 1), vec3(1, 0, 0));
-        add_light(scene, vec3(4, 1, 4), vec3(0, 1, 0));
-        add_light(scene, vec3(-3, 2, 2), vec3(0, 0, 1));
-        add_light(scene, vec3(3, 2, 2), vec3(1, 1, 1));
+        add_light(scene, vec3(0, 3, 0), vec3(1, 0, 0));
+        add_light(scene, vec3(0, 3, 4), vec3(0, 1, 0));
+        add_light(scene, vec3(4, 3, 0), vec3(0, 0, 1));
+        add_light(scene, vec3(4, 3, 4), vec3(1, 1, 1));
 #else
         add_random_lights(scene, RANDOM_LIGHT_COUNT, vec3(0,1,4), 25);
 #endif
@@ -132,18 +132,16 @@ int main()
             camera.update(dt, window);
             if (is_key_down(window, KEY_ARROW_UP))
             {
-                for (auto& entity : scene.entities) 
+                for (auto& light : scene.lights) 
                 {
-                    auto m = entity.m_model;
-                    entity.m_model = translate4x4(0, 2*dt, 0) * m;
+                    light.pos += vec4(0, 2*dt,0, 0);
                 }
             }
             if (is_key_down(window, KEY_ARROW_DOWN))
             {
-                for (auto& entity : scene.entities)
+                for (auto& light : scene.lights)
                 {
-                    auto m = entity.m_model;
-                    entity.m_model = translate4x4(0, -2*dt, 0) * m;
+                    light.pos += vec4(0, -2*dt,0, 0);
                 }
             }
             scene.entities[1].m_model *= rotate4x4_y(dt);
