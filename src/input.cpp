@@ -24,6 +24,8 @@ void input_manager_t::init(xcb_connection_t* con)
 		{ KEY_ARROW_DOWN, XK_Down },
 		{ KEY_ARROW_LEFT, XK_Left },
 		{ KEY_ARROW_RIGHT, XK_Right },
+		{ KEY_SHIFT_L, XK_Shift_L },
+		{ KEY_SHIFT_R, XK_Shift_R },
 	};
 	size_t keys_count = sizeof(key_mapping) / sizeof(key_mapping_t);
 
@@ -135,6 +137,7 @@ void input_manager_t::handle_event(window_t* window, xcb_generic_event_t *event,
 		case XCB_KEY_PRESS:
 			{
 				auto ev = (const xcb_key_press_event_t*)event;
+                LOG_INFO("key %d", ev->detail);
 				if (keycode_map.find(ev->detail) != keycode_map.end())
 				{
 					u32 key = keycode_map[ev->detail];

@@ -1,5 +1,7 @@
-
 #define PI 3.1415926535;
+#define INVALID_ID 0xffffffff
+#define FLT_MAX 3.40282e38
+#define FLT_MIN 1.17549e-38
 
 // https://graphics.stanford.edu/~seander/bithacks.html#IntegerLog
 uint get_msb(uint v)

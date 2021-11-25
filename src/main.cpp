@@ -42,6 +42,14 @@ static void add_random_lights(scene_t& scene, u32 count, v3 origin, f32 distance
     }
 }
 
+static void move_lights(scene_t& scene, v4 t)
+{
+    for (auto& light : scene.lights) 
+    {
+        light.pos += t;
+    }
+}
+
 int main()
 {
     window_t window;
@@ -132,17 +140,33 @@ int main()
             camera.update(dt, window);
             if (is_key_down(window, KEY_ARROW_UP))
             {
-                for (auto& light : scene.lights) 
+                if (!is_key_down(window, KEY_SHIFT_L))
                 {
-                    light.pos += vec4(0, 2*dt,0, 0);
+                    move_lights(scene, vec4(0, 2 * dt, 0, 0));
+                } 
+                else
+                {
+                    move_lights(scene, vec4(0, 0, 2 * dt, 0));
                 }
             }
             if (is_key_down(window, KEY_ARROW_DOWN))
             {
-                for (auto& light : scene.lights)
+                if (!is_key_down(window, KEY_SHIFT_L))
                 {
-                    light.pos += vec4(0, -2*dt,0, 0);
+                    move_lights(scene, vec4(0, -2 * dt, 0, 0));
                 }
+                else
+                {
+                    move_lights(scene, vec4(0, 0, -2 * dt, 0));
+                }
+            }
+            if (is_key_down(window, KEY_ARROW_RIGHT))
+            {
+                move_lights(scene, vec4(2*dt, 0, 0, 0));
+            }
+            if (is_key_down(window, KEY_ARROW_LEFT))
+            {
+                move_lights(scene, vec4(-2*dt, 0, 0, 0));
             }
             scene.entities[1].m_model *= rotate4x4_y(dt);
             update_acceleration_structures(renderer.context, scene);

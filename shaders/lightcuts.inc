@@ -2,10 +2,6 @@
 #include "../src/shader_data.h"
 #include "common.inc"
 
-#define INVALID_ID 0xffffffff
-#define FLT_MAX 3.40282e38
-#define FLT_MIN 1.17549e-38
-
 // define outside or default to set 0 
 #ifndef NODES_SSBO_SET
     #define NODES_SSBO_SET 0

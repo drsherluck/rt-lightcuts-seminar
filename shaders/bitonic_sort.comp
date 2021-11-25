@@ -3,6 +3,7 @@
 
 #define GLSL
 #include "../src/shader_data.h"
+#include "common.inc"
 
 layout(set = 0, binding = 0) buffer lights_buffer
 {
@@ -50,6 +51,6 @@ void main()
     }
     else if (l >= num_lights && l < total_nodes)
     {
-        arr[l].id = 0xffffffff;
+        arr[l].id = INVALID_ID;
     }
 }

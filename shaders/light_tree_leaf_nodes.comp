@@ -3,6 +3,7 @@
 
 #define GLSL
 #include "../src/shader_data.h"
+#include "common.inc"
 
 layout(std430, set = 0, binding = 0) readonly buffer lights_buffer
 {
@@ -34,7 +35,7 @@ void main()
 
         node_t node;
         node.id = idx;
-        if (idx != 0xffffffff) // invalid index (dummy node)
+        if (idx != INVALID_ID) // invalid index (dummy node)
         {
             light_t light = lights[idx]; 
             node.intensity = light.color.x + light.color.y + light.color.z;
@@ -45,15 +46,15 @@ void main()
             }
             else 
             {
-                node.bbox_min = vec3(-1e8f);
-                node.bbox_max = vec3( 1e8f);
+                node.bbox_min = vec3(FLT_MIN);
+                node.bbox_max = vec3(FLT_MAX);
             }
         }
         else
         {
             node.intensity = 0.0;
-            node.bbox_min  = vec3(-1e8f);
-            node.bbox_max  = vec3( 1e8f);
+            node.bbox_min  = vec3(FLT_MIN);
+            node.bbox_max  = vec3(FLT_MAX);
         }
         nodes[id] = node;
     }
