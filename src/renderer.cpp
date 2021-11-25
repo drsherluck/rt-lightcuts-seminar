@@ -377,6 +377,19 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
         bbox_pipeline.descriptor_set_layouts.push_back(layout_set0.handle); // need cameraubo
         build_graphics_pipeline(context, pipeline_description, bbox_pipeline);
     }
+
+    // point light visualizer
+    {
+        pipeline_description_t pipeline_description;
+        init_graphics_pipeline_description(context, pipeline_description);
+        add_shader(pipeline_description, VK_SHADER_STAGE_VERTEX_BIT, "main", "shaders/points.vert.spv");
+        add_shader(pipeline_description, VK_SHADER_STAGE_FRAGMENT_BIT, "main", "shaders/points.frag.spv");
+        pipeline_description.topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+        pipeline_description.polygon_mode = VK_POLYGON_MODE_POINT;
+        pipeline_description.render_pass = bbox_render_pass;
+        points_pipeline.descriptor_set_layouts.push_back(layout_set0.handle); // need cameraubo
+        build_graphics_pipeline(context, pipeline_description, points_pipeline);
+    }
 }
 
 void renderer_t::update_descriptors(scene_t& scene)
@@ -387,7 +400,8 @@ void renderer_t::update_descriptors(scene_t& scene)
     {
         // set 0
         create_buffer(context, sizeof(camera_ubo_t), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, &frame_resources[i].ubo_camera);
-        create_buffer(context, MAX_LIGHTS * sizeof(light_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &frame_resources[i].ubo_light);
+        // used as vbo for visualizing
+        create_buffer(context, MAX_LIGHTS * sizeof(light_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &frame_resources[i].ubo_light); 
         create_buffer(context, MAX_ENTITIES * sizeof(model_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &frame_resources[i].ubo_model); 
         create_buffer(context, MAX_ENTITIES * sizeof(material_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &frame_resources[i].sbo_material);
         create_buffer(context, MAX_ENTITIES * sizeof(mesh_info_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &frame_resources[i].sbo_meshes);
@@ -946,6 +960,8 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
         begin_info.clearValueCount = 2;
         begin_info.pClearValues = clear;
         vkCmdBeginRenderPass(cmd, &begin_info, VK_SUBPASS_CONTENTS_INLINE);
+
+        // draw bbox lines
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bbox_pipeline.handle);
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bbox_pipeline.layout, 0,
                 1, &frame_resources[frame_index].descriptor_sets[0], 0, nullptr);
@@ -954,6 +970,14 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
         u32 h = static_cast<u32>(log2(num_leaf_nodes));
         u32 vertex_count = 24 * ((1 << h) - 1);
         vkCmdDraw(cmd, vertex_count, 1, 0, 0);
+
+        // draw light points
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, points_pipeline.handle);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, points_pipeline.layout, 0,
+                1, &frame_resources[frame_index].descriptor_sets[0], 0, nullptr);
+        vkCmdBindVertexBuffers(cmd, 0, 1, &frame_resources[frame_index].ubo_light.handle, offsets);
+        vkCmdDraw(cmd, num_lights, 1, 0, 0);
+
         vkCmdEndRenderPass(cmd);
 
         //VkClearValue clear[2];

@@ -64,6 +64,7 @@ struct renderer_t
     pipeline_t             rtx_pipeline;
     pipeline_t             post_pipeline;
     pipeline_t             bbox_pipeline;
+    pipeline_t             points_pipeline;
     
     // compute pipelines
     pipeline_t             morton_compute_pipeline;
