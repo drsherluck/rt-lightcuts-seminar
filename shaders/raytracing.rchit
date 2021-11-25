@@ -9,7 +9,7 @@
 #define GLSL_EXT_64
 #include "../src/shader_data.h"
 
-#define USER_MAX_CUT 4
+#define USER_MAX_CUT 1
 #define NODES_SSBO_SET 0
 #define NODES_SSBO_BINDING 5
 #include "lightcuts.inc"
@@ -64,11 +64,18 @@ layout(set = 1, binding = 1) uniform scene_ubo
     scene_info_t scene;
 };
 
+layout(std430, set = 2, binding = 0) writeonly buffer vbo_lines
+{
+    vec3 line_points[];
+};
+
 layout(push_constant) uniform constants
 {
     int num_nodes;
     int num_leaf_nodes;
     float time;
+    uint num_samples;
+    vec2 screen_uv;
 };
 
 struct payload_t
@@ -106,7 +113,7 @@ void main()
     uint cut_size;
     light_cut_t light_cut[MAX_CUT_SIZE];
     selected_light_t selected_lights[MAX_CUT_SIZE];
-    gen_light_cut(world_position, light_cut, num_nodes, num_leaf_nodes, cut_size);
+    gen_light_cut(world_position, light_cut, num_nodes, num_leaf_nodes, cut_size, num_samples);
 #if 0 
     // debug: set num_cut_nodes to number of leafes for this test
     vec4 color = vec4(0, 0, 0, 1);
@@ -129,13 +136,29 @@ void main()
     float r = random(vec4(gl_LaunchIDEXT.xy, payload.seed, time));
     select_lights(world_position, cut_size, light_cut, selected_lights, num_nodes, num_leaf_nodes, r);
 
+    // write to ubo
+#if 1
+    if (gl_LaunchIDEXT.xy == uvec2(screen_uv))
+    {
+        for (int i = 0; i < cut_size; ++i)
+        {
+            selected_light_t selection = selected_lights[i];
+            if (selection.id == INVALID_ID || selection.prob == 0.0) continue;
+            light_t light = lights[selection.id];
+
+            int idx = i * 2;
+            line_points[idx]     = world_position;
+            line_points[idx + 1] = light.pos;
+        }
+    }
+#endif
+
     // limit lights to 1 sample for now
     vec3 temp_color = vec3(0);
     for (int i = 0; i < cut_size; ++i)
     {
         selected_light_t selection = selected_lights[i];
         if (selection.id == INVALID_ID || selection.prob == 0.0) continue;
-
         light_t light = lights[selection.id];
         float inv_prob = selection.prob == 0.0 ? 0 : 1.0/selection.prob;
         vec3 L = light.pos - world_position;

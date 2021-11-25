@@ -29,6 +29,9 @@ struct frame_resource_t
     // here are bbox lines writen
     buffer_t vbo_lines;
 
+    // lines for visualizing sampling
+    buffer_t vbo_ray_lines;
+
     // syncs
     VkFence rt_fence;
     VkSemaphore rt_semaphore;
@@ -42,7 +45,10 @@ struct frame_resource_t
 // that can be changed at runtime
 struct render_state_t
 {
+    i32  num_samples;
     bool render_depth_buffer;
+    bool render_sample_lines; 
+    v2   screen_uv; 
 };
 
 struct renderer_t
@@ -63,8 +69,8 @@ struct renderer_t
     pipeline_t             debug_pipeline;
     pipeline_t             rtx_pipeline;
     pipeline_t             post_pipeline;
-    pipeline_t             bbox_pipeline;
     pipeline_t             points_pipeline;
+    pipeline_t             lines_pipeline;
     
     // compute pipelines
     pipeline_t             morton_compute_pipeline;

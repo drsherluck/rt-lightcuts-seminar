@@ -15,7 +15,8 @@
 #define _randf2() (_randf() * (rand() % 2 ? -1.0 : 1.0))
 
 #define USE_RANDOM_LIGHTS 0
-#define RANDOM_LIGHT_COUNT 1 << 17 //(1 << 17) // 17 is around 100000 lights (sorting worse after this)
+#define DISTANCE_FROM_ORIGIN 4
+#define RANDOM_LIGHT_COUNT 10 //(1 << 17) // 17 is around 100000 lights (sorting worse after this)
 
 static v3 random_color()
 {
@@ -91,7 +92,7 @@ int main()
         add_light(scene, vec3(-2, 4, 3), vec3(0, 0, 1));
         add_light(scene, vec3(-4, 3, 8), vec3(1, 1, 1));
 #else
-        add_random_lights(scene, RANDOM_LIGHT_COUNT, vec3(0,1,4), 25);
+        add_random_lights(scene, RANDOM_LIGHT_COUNT, vec3(0,1,4), DISTANCE_FROM_ORIGIN);
 #endif
         std::sort(std::begin(scene.entities), std::end(scene.entities),
                 [](const entity_t& a, const entity_t& b) 
@@ -113,6 +114,8 @@ int main()
     bool pause = false;
     render_state_t render_state;
     render_state.render_depth_buffer = false;
+    render_state.render_sample_lines = false;
+    render_state.num_samples = 1;
     while(run)
     {
         update_time(time, 1.0/144.0);
@@ -134,7 +137,14 @@ int main()
         {
             render_state.render_depth_buffer = !render_state.render_depth_buffer;
         }
-        
+        if (is_key_pressed(window, KEY_R))
+        {
+            render_state.render_sample_lines = true;
+            render_state.screen_uv = window.input_manager.curr_mouse_pos;
+            v2 screen_uv = floor(vec2(WIDTH, HEIGHT) * render_state.screen_uv);
+            LOG_INFO("(%f, %f)", screen_uv.x, screen_uv.y);
+        }
+
         if (!pause) 
         {
             camera.update(dt, window);
@@ -168,6 +178,18 @@ int main()
             {
                 move_lights(scene, vec4(-2*dt, 0, 0, 0));
             }
+
+            if (is_key_pressed(window, KEY_PLUS)) 
+            {
+                render_state.num_samples = MIN(render_state.num_samples + 1, scene.lights.size());
+                LOG_INFO("num samples = %d", render_state.num_samples);
+            }
+            if (is_key_pressed(window, KEY_MINUS)) 
+            {
+                render_state.num_samples = MAX(render_state.num_samples - 1, 1);
+                LOG_INFO("num samples = %d", render_state.num_samples);
+            }
+
             scene.entities[1].m_model *= rotate4x4_y(dt);
             update_acceleration_structures(renderer.context, scene);
             renderer.draw_scene(scene, camera, render_state);

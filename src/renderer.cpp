@@ -7,6 +7,9 @@
 
 #include <cassert>
 
+// used for defining the size of vbo_ray_lines
+#define MAX_LIGHTS_SAMPLED 32
+
 #define ENABLE_MORTON_ENCODE 1
 #define ENABLE_SORT_LIGHTS 1
 #define ENABLE_LIGHT_TREE 1
@@ -214,7 +217,7 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
     
     // create descriptor layouts for pipelines
     // set 0 
-    set_layouts.resize(7);
+    set_layouts.resize(8);
     auto& layout_set0 = set_layouts[0];
     add_binding(layout_set0, 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_RAYGEN_BIT_KHR);
     add_binding(layout_set0, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_FRAGMENT_BIT | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
@@ -248,12 +251,15 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
     add_binding(layout_set5, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
     add_binding(layout_set5, 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
     build_descriptor_set_layout(context.device, layout_set5);
-
     // set 6 (write vbo lines compute shader)
     auto& layout_set6 = set_layouts[6];
     add_binding(layout_set6, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
     add_binding(layout_set6, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
     build_descriptor_set_layout(context.device, layout_set6);
+    // set 7 (vbo lines)
+    auto& layout_set7 = set_layouts[7];
+    add_binding(layout_set7, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
+    build_descriptor_set_layout(context.device, layout_set7);
     
     // create prepass pipeline
     {
@@ -293,6 +299,7 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
         rt_pipeline_description.max_recursion_depth = 3; // todo: check mas recursion depth
         rt_pipeline_description.descriptor_set_layouts.push_back(layout_set0.handle);
         rt_pipeline_description.descriptor_set_layouts.push_back(layout_set1.handle);
+        rt_pipeline_description.descriptor_set_layouts.push_back(layout_set7.handle); // debuging lines
         build_raytracing_pipeline(context, rt_pipeline_description, &rtx_pipeline);
         // set region from group indices (todo: payloads)
         rt_pipeline_description.sbt_regions[RGEN_REGION] = {0};
@@ -374,8 +381,8 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
         pipeline_description.polygon_mode = VK_POLYGON_MODE_LINE;
         pipeline_description.cull_mode = VK_CULL_MODE_NONE;
         pipeline_description.render_pass = bbox_render_pass;
-        bbox_pipeline.descriptor_set_layouts.push_back(layout_set0.handle); // need cameraubo
-        build_graphics_pipeline(context, pipeline_description, bbox_pipeline);
+        lines_pipeline.descriptor_set_layouts.push_back(layout_set0.handle); // need cameraubo
+        build_graphics_pipeline(context, pipeline_description, lines_pipeline);
     }
 
     // point light visualizer
@@ -469,14 +476,22 @@ void renderer_t::update_descriptors(scene_t& scene)
         bind_image(set6, 0, &depth_attachment_info);
         frame_resources[i].descriptor_sets.push_back(build_descriptor_set(descriptor_allocator, set6));
 
-        // buffer for lines
+        // buffer for bbox lines
         create_buffer(context, MAX_LIGHTS * sizeof(v4) * 12 * 2, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &frame_resources[i].vbo_lines);
         VkDescriptorBufferInfo line_vbo_info = { frame_resources[i].vbo_lines.handle, 0, VK_WHOLE_SIZE };
         descriptor_set_t set7(set_layouts[6]);
         bind_buffer(set7, 0, &sbo_light_tree_info);
         bind_buffer(set7, 1, &line_vbo_info);
         frame_resources[i].descriptor_sets.push_back(build_descriptor_set(descriptor_allocator, set7));
-        
+       
+        // buffer for sample ray lines
+        create_buffer(context, MAX_LIGHTS_SAMPLED * sizeof(v4) * 2, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &frame_resources[i].vbo_ray_lines);
+        VkDescriptorBufferInfo ray_lines_vbo_info = { frame_resources[i].vbo_ray_lines.handle, 0, VK_WHOLE_SIZE };
+        descriptor_set_t set8(set_layouts[7]);
+        LOG_INFO("Descriptor bindings %d", set_layouts[7].bindings.size());
+        bind_buffer(set8, 0, &ray_lines_vbo_info);
+        frame_resources[i].descriptor_sets.push_back(build_descriptor_set(descriptor_allocator, set8));
+
         // create sync objects (todo: move this)
         VkSemaphoreCreateInfo semaphore_info = {};
         semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -855,19 +870,31 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
         {
             CHECKPOINT(cmd, "[PRE] RAYTRACING");
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtx_pipeline.handle);
-            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtx_pipeline.layout, 0, 
-                    2, &frame_resources[frame_index].descriptor_sets[0], 0, nullptr);
+            VkDescriptorSet sets[3] = { 
+                frame_resources[frame_index].descriptor_sets[0],
+                frame_resources[frame_index].descriptor_sets[1],
+                frame_resources[frame_index].descriptor_sets[8],
+            };
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtx_pipeline.layout, 0, 3, sets, 0, nullptr);
 
             struct 
             {
                 i32 num_nodes;
                 i32 num_leaf_nodes;
                 f32 time;
+                u32 num_samples;
+                v2 screen_uv;
             } constants;
             
             u32 h = static_cast<u32>(log2(num_leaf_nodes));
             constants.num_nodes = ((1 << (h + 1)) - 1);
             constants.num_leaf_nodes = num_leaf_nodes;
+            constants.num_samples = state.num_samples;
+            constants.screen_uv = vec2(-1.0, -1.0);
+            if (state.render_sample_lines)
+            {
+                constants.screen_uv = floor(vec2(context.swapchain.extent.width, context.swapchain.extent.height) * state.screen_uv);
+            }
             timespec tp;
             clock_gettime(CLOCK_REALTIME, &tp);
             constants.time = (float)tp.tv_nsec;
@@ -962,14 +989,27 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
         vkCmdBeginRenderPass(cmd, &begin_info, VK_SUBPASS_CONTENTS_INLINE);
 
         // draw bbox lines
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bbox_pipeline.handle);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, bbox_pipeline.layout, 0,
+        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, lines_pipeline.handle);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, lines_pipeline.layout, 0,
                 1, &frame_resources[frame_index].descriptor_sets[0], 0, nullptr);
         VkDeviceSize offsets[1] = {0};
         vkCmdBindVertexBuffers(cmd, 0, 1, &frame_resources[frame_index].vbo_lines.handle, offsets);
+        v3 line_color = vec3(1);
+        vkCmdPushConstants(cmd, lines_pipeline.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(v3), &line_color);
         u32 h = static_cast<u32>(log2(num_leaf_nodes));
         u32 vertex_count = 24 * ((1 << h) - 1);
         vkCmdDraw(cmd, vertex_count, 1, 0, 0);
+
+        // draw ray lines from sampled here
+        if (state.render_sample_lines)
+        {
+            vkCmdBindVertexBuffers(cmd, 0, 1, &frame_resources[frame_index].vbo_ray_lines.handle, offsets);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, lines_pipeline.layout, 0,
+                    1, &frame_resources[frame_index].descriptor_sets[0], 0, nullptr);
+            v3 line_color = vec3(1,0,0);
+            vkCmdPushConstants(cmd, lines_pipeline.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(v3), &line_color);
+            vkCmdDraw(cmd, state.num_samples * 2, 1, 0, 0);
+        }
 
         // draw light points
         vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, points_pipeline.handle);

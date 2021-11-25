@@ -26,6 +26,9 @@ void input_manager_t::init(xcb_connection_t* con)
 		{ KEY_ARROW_RIGHT, XK_Right },
 		{ KEY_SHIFT_L, XK_Shift_L },
 		{ KEY_SHIFT_R, XK_Shift_R },
+		{ KEY_R, XK_r },
+		{ KEY_PLUS, XK_plus },
+		{ KEY_MINUS, XK_minus },
 	};
 	size_t keys_count = sizeof(key_mapping) / sizeof(key_mapping_t);
 
@@ -102,7 +105,7 @@ void input_manager_t::update()
 
     prev_mouse_pos = curr_mouse_pos;
 }
-
+    
 void input_manager_t::handle_event(window_t* window, xcb_generic_event_t *event, xcb_generic_event_t *next)
 {
 	switch (event->response_type & ~0x80)
@@ -137,7 +140,6 @@ void input_manager_t::handle_event(window_t* window, xcb_generic_event_t *event,
 		case XCB_KEY_PRESS:
 			{
 				auto ev = (const xcb_key_press_event_t*)event;
-                LOG_INFO("key %d", ev->detail);
 				if (keycode_map.find(ev->detail) != keycode_map.end())
 				{
 					u32 key = keycode_map[ev->detail];

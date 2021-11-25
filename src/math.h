@@ -222,6 +222,12 @@ inline void operator*=(v2& v, f32 s)
     v.y *= s;
 }
 
+inline void operator*=(v2& v0, v2 v1)
+{
+    v0.x *= v1.x;
+    v0.y *= v1.y;
+}
+
 inline void operator/=(v2& v, f32 s)
 {
     v *= (1.0f/s);
@@ -251,6 +257,12 @@ inline v2 operator*(v2 v, f32 s)
     return res;
 }
 
+inline v2 operator*(v2 v0, v2 v1)
+{
+    v2 res = {v0.x*v1.x, v0.y*v1.y};
+    return res;
+}
+
 inline v2 operator/(v2 v, f32 s)
 {
     f32 f = (1.0f/s);
@@ -266,6 +278,13 @@ inline bool operator==(const v2& l, const v2& r)
 inline bool operator!=(const v2& l, const v2& r)
 {
     return !(l == r);
+}
+
+inline v2 floor(v2 v)
+{
+    v.x = floor(v.x);
+    v.y = floor(v.y);
+    return v;
 }
 
 // section: v3

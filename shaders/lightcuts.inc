@@ -76,15 +76,15 @@ float calc_node_error(uint id, vec3 p)
     return geometric_term(p, node.bbox_min, node.bbox_max) * node.intensity / dmin2;
 }
 
-void gen_light_cut(vec3 p, inout light_cut_t light_cut[MAX_CUT_SIZE], int num_nodes, int num_leaf_nodes, out uint selected)
+void gen_light_cut(vec3 p, inout light_cut_t light_cut[MAX_CUT_SIZE], int num_nodes, int num_leaf_nodes, out uint selected, in uint num_samples)
 {
+    int max_leaf_id = num_nodes - num_leaf_nodes;
+    uint size = min(num_samples, num_leaf_nodes); 
     selected = 1;
     light_cut[0].id = 0;
     light_cut[0].error = FLT_MAX;
     uint max_id = 0;
     // limit to number of leaf nodes
-    uint size = min(USER_MAX_CUT, num_leaf_nodes);
-    int max_leaf_id = num_nodes - num_leaf_nodes;
     while (selected < size)
     {
         // replace with children
