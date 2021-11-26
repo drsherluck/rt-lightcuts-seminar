@@ -215,6 +215,15 @@ int main()
             scene.entities[1].m_model *= rotate4x4_y(dt);
             update_acceleration_structures(renderer.context, scene);
             renderer.draw_scene(scene, *curr_camera, render_state);
+        } 
+        else 
+        {
+            if (is_key_pressed(window, KEY_N))
+            {
+                scene.entities[1].m_model *= rotate4x4_y(dt);
+                update_acceleration_structures(renderer.context, scene);
+                renderer.draw_scene(scene, *curr_camera, render_state);
+            }
         }
     }
 
