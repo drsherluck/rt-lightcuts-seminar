@@ -14,9 +14,9 @@
 #define _randf() ((((f32) rand())/((f32) RAND_MAX)))
 #define _randf2() (_randf() * (rand() % 2 ? -1.0 : 1.0))
 
-#define USE_RANDOM_LIGHTS 0
+#define USE_RANDOM_LIGHTS 1
 #define DISTANCE_FROM_ORIGIN 4
-#define RANDOM_LIGHT_COUNT 10 //(1 << 17) // 17 is around 100000 lights (sorting worse after this)
+#define RANDOM_LIGHT_COUNT 8 //(1 << 17) // 17 is around 100000 lights (sorting worse after this)
 
 static v3 random_color()
 {
@@ -57,9 +57,6 @@ int main()
     window.create_window("Engine", WIDTH, HEIGHT);
     renderer_t renderer(&window); 
 
-    camera_t camera;
-    f32 aspect = window.get_aspect_ratio();
-    camera.set_fov(radians(60.0f), aspect);
 
     // load meshes and scene
     scene_t scene;
@@ -87,10 +84,10 @@ int main()
         add_entity(scene, 0, 0, translate4x4(0, 1, 4) * scale4x4(0.5) * rotate4x4_y(radians(45)));
         add_entity(scene, 1, 1, translate4x4(0, -0.5, 4) * scale4x4(2));
 #if !USE_RANDOM_LIGHTS
-        add_light(scene, vec3(3, 2, 4), vec3(1, 0, 0));
-        add_light(scene, vec3(2, 2, 6), vec3(0, 1, 0));
-        add_light(scene, vec3(-2, 4, 3), vec3(0, 0, 1));
-        add_light(scene, vec3(-4, 3, 8), vec3(1, 1, 1));
+        add_light(scene, vec3(2, 2, 4), vec3(1, 0, 0));
+        add_light(scene, vec3(1, 2, 6), vec3(0, 1, 0));
+        add_light(scene, vec3(-1, 4, 3), vec3(0, 0, 1));
+        add_light(scene, vec3(-2, 3, 8), vec3(1, 1, 1));
 #else
         add_random_lights(scene, RANDOM_LIGHT_COUNT, vec3(0,1,4), DISTANCE_FROM_ORIGIN);
 #endif
@@ -104,18 +101,32 @@ int main()
     // create descriptor sets;
     renderer.update_descriptors(scene);
 
-    camera.position = vec3(0, 3, 0);
+    f32 aspect = window.get_aspect_ratio();
+
+    camera_t camera;
+    camera.set_perspective(radians(60.0f), aspect);
+    camera.position = vec3(0, 3, -1);
     camera.lookat(vec3(0, 0, 4));
     camera.update(0, window);
+
+    camera_t topdown;
+    topdown.set_orthographic(7.0f, aspect);
+    topdown.position = vec3(0, 5, 4);
+    topdown.lookat(vec3(0, 0, 4));
+    topdown.update(0, window);
+    topdown.freeze();
     
     // render loop
     frame_time_t time;
     bool run = true;
     bool pause = false;
+
     render_state_t render_state;
     render_state.render_depth_buffer = false;
     render_state.render_sample_lines = false;
     render_state.num_samples = 1;
+
+    camera_t *curr_camera = &camera;
     while(run)
     {
         update_time(time, 1.0/144.0);
@@ -144,10 +155,21 @@ int main()
             v2 screen_uv = floor(vec2(WIDTH, HEIGHT) * render_state.screen_uv);
             LOG_INFO("(%f, %f)", screen_uv.x, screen_uv.y);
         }
+        if (is_key_pressed(window, KEY_Q))
+        {
+            if (curr_camera == &camera)
+            {
+                curr_camera = &topdown;
+            }
+            else
+            {
+                curr_camera = &camera;
+            }
+        }
 
         if (!pause) 
         {
-            camera.update(dt, window);
+            curr_camera->update(dt, window);
             if (is_key_down(window, KEY_ARROW_UP))
             {
                 if (!is_key_down(window, KEY_SHIFT_L))
@@ -192,7 +214,7 @@ int main()
 
             scene.entities[1].m_model *= rotate4x4_y(dt);
             update_acceleration_structures(renderer.context, scene);
-            renderer.draw_scene(scene, camera, render_state);
+            renderer.draw_scene(scene, *curr_camera, render_state);
         }
     }
 

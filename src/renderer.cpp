@@ -884,6 +884,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
                 f32 time;
                 u32 num_samples;
                 v2 screen_uv;
+                i32 is_ortho; // boolean
             } constants;
             
             u32 h = static_cast<u32>(log2(num_leaf_nodes));
@@ -895,10 +896,11 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
             {
                 constants.screen_uv = floor(vec2(context.swapchain.extent.width, context.swapchain.extent.height) * state.screen_uv);
             }
+            constants.is_ortho = static_cast<i32>(camera.is_ortho);
             timespec tp;
             clock_gettime(CLOCK_REALTIME, &tp);
             constants.time = (float)tp.tv_nsec;
-            vkCmdPushConstants(cmd, rtx_pipeline.layout, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 0, sizeof(constants), &constants);
+            vkCmdPushConstants(cmd, rtx_pipeline.layout, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 0, sizeof(constants), &constants);
             vkCmdTraceRays(cmd, &sbt.rgen, &sbt.miss, &sbt.hit, &sbt.call, context.swapchain.extent.width, context.swapchain.extent.height, 1);
             CHECKPOINT(cmd, "[POST] RAYTRACING");
         }

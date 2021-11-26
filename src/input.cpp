@@ -29,6 +29,7 @@ void input_manager_t::init(xcb_connection_t* con)
 		{ KEY_R, XK_r },
 		{ KEY_PLUS, XK_plus },
 		{ KEY_MINUS, XK_minus },
+		{ KEY_Q, XK_q },
 	};
 	size_t keys_count = sizeof(key_mapping) / sizeof(key_mapping_t);
 

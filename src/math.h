@@ -1050,6 +1050,16 @@ inline m4x4 perspective(f32 fov, u32 width, u32 height, f32 near, f32 far)
     return perspective(fov, aspect, near, far);
 }
 
+inline m4x4 orthographic(f32 left, f32 right, f32 top, f32 bottom, f32 near, f32 far)
+{
+    m4x4 res;
+    res[0] = {2.0f/(right - left), 0, 0, 0}; 
+    res[1] = {0, 2.0f/(top - bottom), 0, 0};
+    res[2] = {0, 0, -1.0f/(far - near), 0};
+    res[3] = {-(left + right)/(right - left), -(bottom + top)/(top-bottom), -near/(far - near), 1 };
+    return res;
+}
+
 inline m4x4 view_matrix(v3 position, v3 forward, v3 up, v3 right)
 {
     m4x4 m;
