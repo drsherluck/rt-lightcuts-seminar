@@ -17,6 +17,7 @@
 #define int      i32
 #define float    f32
 #define uint64_t u64
+#define bool     i32
 #endif
 
 struct light_t
@@ -94,6 +95,12 @@ struct scene_info_t
 };
 #endif
 
+struct query_output_t
+{
+    vec3 hit_pos;
+    bool hit; // flag to know if it was hit or not
+};
+
 #ifndef GLSL
 #undef mat3
 #undef mat4 
@@ -103,6 +110,7 @@ struct scene_info_t
 #undef int  
 #undef float 
 #undef uint64_t 
+#undef bool
 #endif 
 
 #endif // SHADER_DATA_H

@@ -64,7 +64,12 @@ layout(set = 1, binding = 1) uniform scene_ubo
     scene_info_t scene;
 };
 
-layout(std430, set = 2, binding = 0) writeonly buffer vbo_lines
+layout(std430, set = 2, binding = 0) readonly buffer vbo_info
+{
+    query_output_t debug;
+};
+
+layout(std430, set = 2, binding = 1) writeonly buffer vbo_lines
 {
     vec3 line_points[];
 };
@@ -75,7 +80,7 @@ layout(push_constant) uniform constants
     int num_leaf_nodes;
     float time;
     uint num_samples;
-    vec2 screen_uv;
+    bool is_ortho; // 4 bytes
 };
 
 struct payload_t
@@ -138,18 +143,18 @@ void main()
 
     // write to ubo
 #if 1
-    if (gl_LaunchIDEXT.xy == uvec2(screen_uv))
+    if (debug.hit)
     {
         for (int i = 0; i < cut_size; ++i)
         {
             selected_light_t selection = selected_lights[i];
             if (selection.id == INVALID_ID || selection.prob == 0.0) continue;
             light_t light = lights[selection.id];
-
             int idx = i * 2;
-            line_points[idx]     = world_position;
+            line_points[idx]     = debug.hit_pos;
             line_points[idx + 1] = light.pos;
         }
+
     }
 #endif
 

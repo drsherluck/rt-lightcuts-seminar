@@ -4,6 +4,7 @@
 #include "debug_util.h"
 #include "shader_data.h"
 #include "time.h"
+#include "window.h"
 
 #include <cassert>
 
@@ -258,7 +259,8 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
     build_descriptor_set_layout(context.device, layout_set6);
     // set 7 (vbo lines)
     auto& layout_set7 = set_layouts[7];
-    add_binding(layout_set7, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
+    add_binding(layout_set7, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
+    add_binding(layout_set7, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
     build_descriptor_set_layout(context.device, layout_set7);
     
     // create prepass pipeline
@@ -306,6 +308,40 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
         rt_pipeline_description.sbt_regions[CHIT_REGION] = {3};
         rt_pipeline_description.sbt_regions[MISS_REGION] = {1,2};
         build_shader_binding_table(context, rt_pipeline_description, rtx_pipeline, sbt);
+    }
+
+    // create hit query pipeline (there is no query support for 1060 6gb)
+    {
+        rt_pipeline_description_t rt_pipeline_description;
+        add_shader(rt_pipeline_description, VK_SHADER_STAGE_RAYGEN_BIT_KHR, "main", "shaders/hit_query.rgen.spv");
+        add_shader(rt_pipeline_description, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, "main", "shaders/hit_query.rchit.spv");
+        add_shader(rt_pipeline_description, VK_SHADER_STAGE_MISS_BIT_KHR, "main", "shaders/hit_query.rmiss.spv");
+
+        shader_group_t group;
+        // raygen
+        group.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
+        group.general = 0;
+        group.closest_hit = VK_SHADER_UNUSED_KHR;
+        group.any_hit = VK_SHADER_UNUSED_KHR;
+        group.intersection = VK_SHADER_UNUSED_KHR;
+        rt_pipeline_description.groups.push_back(group);
+        // general miss
+        group.general = 2;
+        rt_pipeline_description.groups.push_back(group);
+        // hit
+        group.type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+        group.general = 1;
+        rt_pipeline_description.groups.push_back(group);
+        rt_pipeline_description.max_recursion_depth = 3; // todo: check mas recursion depth
+        rt_pipeline_description.descriptor_set_layouts.push_back(layout_set0.handle);
+        rt_pipeline_description.descriptor_set_layouts.push_back(layout_set1.handle);
+        rt_pipeline_description.descriptor_set_layouts.push_back(layout_set7.handle); // debuging lines
+        build_raytracing_pipeline(context, rt_pipeline_description, &query_pipeline);
+        // set region from group indices (todo: payloads)
+        rt_pipeline_description.sbt_regions[RGEN_REGION] = {0};
+        rt_pipeline_description.sbt_regions[CHIT_REGION] = {2};
+        rt_pipeline_description.sbt_regions[MISS_REGION] = {1};
+        build_shader_binding_table(context, rt_pipeline_description, query_pipeline, query_sbt);
     }
 
     // create morton encoder pipeline
@@ -403,6 +439,10 @@ void renderer_t::update_descriptors(scene_t& scene)
 {
     VkCommandBuffer cmd = begin_one_time_command_buffer(context, context.frames[0].command_pool);
     begin_upload(staging);
+
+    // debug rays info buffer
+    create_buffer(context, sizeof(query_output_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &ray_lines_info);
+        VkDescriptorBufferInfo ray_lines_info_info = { ray_lines_info.handle, 0, VK_WHOLE_SIZE };
     for (size_t i = 0; i < context.frames.size(); ++i)
     {
         // set 0
@@ -489,7 +529,8 @@ void renderer_t::update_descriptors(scene_t& scene)
         VkDescriptorBufferInfo ray_lines_vbo_info = { frame_resources[i].vbo_ray_lines.handle, 0, VK_WHOLE_SIZE };
         descriptor_set_t set8(set_layouts[7]);
         LOG_INFO("Descriptor bindings %d", set_layouts[7].bindings.size());
-        bind_buffer(set8, 0, &ray_lines_vbo_info);
+        bind_buffer(set8, 0, &ray_lines_info_info);
+        bind_buffer(set8, 1, &ray_lines_vbo_info);
         frame_resources[i].descriptor_sets.push_back(build_descriptor_set(descriptor_allocator, set8));
 
         // create sync objects (todo: move this)
@@ -869,6 +910,39 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
         if (ENABLE_RTX)
         {
             CHECKPOINT(cmd, "[PRE] RAYTRACING");
+            // ray query to get intersection point 
+            if (state.render_sample_lines && is_key_pressed(*window, KEY_R))
+            {
+                vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, query_pipeline.handle);
+                VkDescriptorSet sets[3] = { 
+                    frame_resources[frame_index].descriptor_sets[0],
+                    frame_resources[frame_index].descriptor_sets[1],
+                    frame_resources[frame_index].descriptor_sets[8],
+                };
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, query_pipeline.layout, 0, 3, sets, 0, nullptr);
+
+                struct 
+                {
+                    v2 screen_uv;
+                    v2 extent;
+                    i32 is_ortho; // boolean
+                } constants;
+                
+                constants.extent = vec2(context.swapchain.extent.width, context.swapchain.extent.height);
+                constants.screen_uv = floor(constants.extent * state.screen_uv);
+                constants.is_ortho = static_cast<i32>(camera.is_ortho);
+                vkCmdPushConstants(cmd, query_pipeline.layout, VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0, sizeof(constants), &constants);
+                vkCmdTraceRays(cmd, &query_sbt.rgen, &query_sbt.miss, &query_sbt.hit, &query_sbt.call, 1, 1, 1); // 1 ray
+
+                // wait for ray query
+                VkMemoryBarrier barrier = {};
+                barrier.sType = VK_STRUCTURE_TYPE_MEMORY_BARRIER;
+                barrier.srcAccessMask = VK_ACCESS_SHADER_WRITE_BIT;
+                barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+                vkCmdPipelineBarrier(cmd, VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR,
+                        VK_PIPELINE_STAGE_RAY_TRACING_SHADER_BIT_KHR, 0, 1, &barrier, 0, nullptr, 0, nullptr);
+            }
+
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR, rtx_pipeline.handle);
             VkDescriptorSet sets[3] = { 
                 frame_resources[frame_index].descriptor_sets[0],
@@ -883,23 +957,17 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
                 i32 num_leaf_nodes;
                 f32 time;
                 u32 num_samples;
-                v2 screen_uv;
                 i32 is_ortho; // boolean
             } constants;
             
             u32 h = static_cast<u32>(log2(num_leaf_nodes));
+            timespec tp;
+            clock_gettime(CLOCK_REALTIME, &tp);
             constants.num_nodes = ((1 << (h + 1)) - 1);
             constants.num_leaf_nodes = num_leaf_nodes;
             constants.num_samples = state.num_samples;
-            constants.screen_uv = vec2(-1.0, -1.0);
-            if (state.render_sample_lines)
-            {
-                constants.screen_uv = floor(vec2(context.swapchain.extent.width, context.swapchain.extent.height) * state.screen_uv);
-            }
-            constants.is_ortho = static_cast<i32>(camera.is_ortho);
-            timespec tp;
-            clock_gettime(CLOCK_REALTIME, &tp);
             constants.time = (float)tp.tv_nsec;
+            constants.is_ortho = static_cast<i32>(camera.is_ortho);
             vkCmdPushConstants(cmd, rtx_pipeline.layout, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 0, sizeof(constants), &constants);
             vkCmdTraceRays(cmd, &sbt.rgen, &sbt.miss, &sbt.hit, &sbt.call, context.swapchain.extent.width, context.swapchain.extent.height, 1);
             CHECKPOINT(cmd, "[POST] RAYTRACING");

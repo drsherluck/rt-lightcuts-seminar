@@ -68,6 +68,7 @@ struct renderer_t
     pipeline_t             prepass_pipeline;
     pipeline_t             debug_pipeline;
     pipeline_t             rtx_pipeline;
+    pipeline_t             query_pipeline;
     pipeline_t             post_pipeline;
     pipeline_t             points_pipeline;
     pipeline_t             lines_pipeline;
@@ -79,7 +80,12 @@ struct renderer_t
     pipeline_t             tree_compute_pipeline;
     pipeline_t             bbox_lines_pso;
     shader_binding_table_t sbt;
+    shader_binding_table_t query_sbt;
     staging_buffer_t       staging;
+
+
+    // shared by all frames 
+    buffer_t ray_lines_info;
 
     std::vector<frame_resource_t> frame_resources;
     descriptor_allocator_t descriptor_allocator;

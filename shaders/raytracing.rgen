@@ -29,7 +29,6 @@ layout(push_constant) uniform constants
     int num_leaf_nodes;
     float time;
     uint num_samples;
-    vec2 screen_uv;
     bool is_ortho; // 4 bytes
 };
 
