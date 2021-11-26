@@ -1072,6 +1072,17 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
         vkCmdPushConstants(cmd, lines_pipeline.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(v3), &line_color);
         u32 h = static_cast<u32>(log2(num_leaf_nodes));
         u32 vertex_count = 24 * ((1 << h) - 1);
+        if (state.render_step_mode)
+        {
+            u32 _h = h == 0 ? 0 : h - 1;
+            u32 s = MIN(state.step, h);
+            u32 l = 0;
+            for (u32 i = 0; i < s; i++)
+            {
+                l |= (1 << (_h - i));
+            }
+            vertex_count = 24 * l;
+        }
         vkCmdDraw(cmd, vertex_count, 1, 0, 0);
 
         // draw ray lines from sampled here

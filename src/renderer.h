@@ -49,6 +49,9 @@ struct render_state_t
     bool render_depth_buffer;
     bool render_sample_lines; 
     v2   screen_uv; 
+
+    bool render_step_mode;
+    i32  step;
 };
 
 struct renderer_t

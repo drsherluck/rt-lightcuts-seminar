@@ -14,7 +14,7 @@
 #define _randf() ((((f32) rand())/((f32) RAND_MAX)))
 #define _randf2() (_randf() * (rand() % 2 ? -1.0 : 1.0))
 
-#define USE_RANDOM_LIGHTS 0
+#define USE_RANDOM_LIGHTS 1
 #define DISTANCE_FROM_ORIGIN 4
 #define RANDOM_LIGHT_COUNT 8 //(1 << 17) // 17 is around 100000 lights (sorting worse after this)
 
@@ -125,6 +125,8 @@ int main()
     render_state.render_depth_buffer = false;
     render_state.render_sample_lines = false;
     render_state.num_samples = 1;
+    render_state.render_step_mode = false;
+    render_state.step = 0;
 
     camera_t *curr_camera = &camera;
     while(run)
@@ -164,6 +166,19 @@ int main()
             else
             {
                 curr_camera = &camera;
+            }
+        }
+
+        if (is_key_pressed(window, KEY_1))
+        {
+            render_state.render_step_mode = !render_state.render_step_mode;
+            render_state.step = 0;
+        }
+        if (is_key_pressed(window, KEY_N))
+        {
+            if (render_state.render_step_mode)
+            {
+                render_state.step++;
             }
         }
 
