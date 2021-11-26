@@ -12,13 +12,7 @@ layout(set = 0, binding = 0) uniform camera_ubo
 };
 layout(set = 1, binding = 0) uniform accelerationStructureEXT tlas;
 
-struct payload_t 
-{
-    vec3 hit_pos;
-    bool hit;
-};
-
-layout(location = 0) rayPayloadEXT payload_t payload;
+layout(location = 0) rayPayloadEXT query_output_t payload;
 
 layout(std430, set = 2, binding = 0) writeonly buffer lines_info
 {
@@ -60,6 +54,5 @@ void main()
         0
     );
 
-    query_output.hit_pos = payload.hit_pos;
-    query_output.hit     = payload.hit;
+    query_output = payload;
 }

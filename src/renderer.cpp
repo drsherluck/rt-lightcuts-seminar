@@ -260,7 +260,7 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
     // set 7 (vbo lines)
     auto& layout_set7 = set_layouts[7];
     add_binding(layout_set7, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
-    add_binding(layout_set7, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
+    add_binding(layout_set7, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
     build_descriptor_set_layout(context.device, layout_set7);
     
     // create prepass pipeline
@@ -690,6 +690,10 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
             data.material_index = entity.mesh_id; // todo: change
         }
         copy_to_buffer(staging, frame_resources[frame_index].ubo_model, model_data.size() * sizeof(model_t), (void*)model_data.data());
+
+        // clear the ray lines buffer
+        v4 empty_buffer[MAX_LIGHTS_SAMPLED * 2] = {};
+        copy_to_buffer(staging, frame_resources[frame_index].vbo_ray_lines, MAX_LIGHTS_SAMPLED * 2 * sizeof(v4), (void*)empty_buffer);
         
         VkSemaphore upload_complete;
         end_upload(staging, &upload_complete);

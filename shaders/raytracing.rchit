@@ -8,6 +8,7 @@
 
 #define GLSL_EXT_64
 #include "../src/shader_data.h"
+#include "common.inc"
 
 #define USER_MAX_CUT 1
 #define NODES_SSBO_SET 0
@@ -141,23 +142,6 @@ void main()
     float r = random(vec4(gl_LaunchIDEXT.xy, payload.seed, time));
     select_lights(world_position, cut_size, light_cut, selected_lights, num_nodes, num_leaf_nodes, r);
 
-    // write to ubo
-#if 1
-    if (debug.hit)
-    {
-        for (int i = 0; i < cut_size; ++i)
-        {
-            selected_light_t selection = selected_lights[i];
-            if (selection.id == INVALID_ID || selection.prob == 0.0) continue;
-            light_t light = lights[selection.id];
-            int idx = i * 2;
-            line_points[idx]     = debug.hit_pos;
-            line_points[idx + 1] = light.pos;
-        }
-
-    }
-#endif
-
     // limit lights to 1 sample for now
     vec3 temp_color = vec3(0);
     for (int i = 0; i < cut_size; ++i)
@@ -173,7 +157,7 @@ void main()
         // white color
         vec3 diffuse = vec3(1) * max(dot(world_normal, L), 0.0);
         vec3 specular = vec3(0);
-        float attenuation = 1;
+        float attenuation = 0.0;
 
         // shadow check
         if (dot(world_normal, L) > 0)
@@ -194,14 +178,28 @@ void main()
                 1 // payload location = 1
             );
 
-            if (is_shadow)
+            if (!is_shadow)
             {
-                attenuation = 0;
-            } 
-            else 
-            {
+                attenuation = 1.0;
                 vec3 H = normalize(L + gl_WorldRayDirectionEXT);
                 specular = vec3(0.5) * pow(max(0.0, dot(H, world_normal)), 5.0);
+            }
+        }
+       
+        vec3 hitw = vec3(gl_ObjectToWorldEXT * vec4(debug.hit_pos, 1.0));
+        if (debug.hit && debug.instance_id == gl_InstanceCustomIndexEXT &&
+            debug.primitive_id == gl_PrimitiveID && is_close(hitw, world_position, 0.01f))
+        {
+            int idx = i * 2;
+            if (attenuation > 0)
+            {
+                line_points[idx]     = hitw;
+                line_points[idx + 1] = light.pos;
+            } 
+            else
+            {
+                line_points[idx]     = vec3(0);
+                line_points[idx + 1] = vec3(0);
             }
         }
         attenuation *= 1.0 / (distance * distance);

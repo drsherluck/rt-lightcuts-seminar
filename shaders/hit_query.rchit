@@ -59,13 +59,7 @@ layout(set = 1, binding = 1) uniform scene_ubo
     scene_info_t scene;
 };
 
-struct payload_t 
-{
-    vec3 hit_pos;
-    bool hit;
-};
-
-layout(location = 0) rayPayloadInEXT payload_t payload;
+layout(location = 0) rayPayloadInEXT query_output_t payload;
 hitAttributeEXT vec2 attribs;
 
 void main()
@@ -86,6 +80,8 @@ void main()
     vec3 position       = v0.pos * barycenter.x + v1.pos * barycenter.y + v2.pos * barycenter.z;
     vec3 world_position = vec3(gl_ObjectToWorldEXT * vec4(position, 1.0));
     
-    payload.hit_pos = world_position;
+    payload.hit_pos = position;
     payload.hit     = true;
+    payload.instance_id  = gl_InstanceCustomIndexEXT;
+    payload.primitive_id = gl_PrimitiveID;
 }

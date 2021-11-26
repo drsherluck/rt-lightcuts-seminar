@@ -99,6 +99,8 @@ struct query_output_t
 {
     vec3 hit_pos;
     bool hit; // flag to know if it was hit or not
+    uint instance_id;
+    uint primitive_id;
 };
 
 #ifndef GLSL

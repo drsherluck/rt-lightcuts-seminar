@@ -1,4 +1,7 @@
-#define PI 3.1415926535;
+#ifndef COMMON_INC
+#define COMMON_INC
+
+#define PI 3.1415926535
 #define INVALID_ID 0xffffffff
 #define FLT_MAX 3.40282e38
 #define FLT_MIN 1.17549e-38
@@ -47,3 +50,12 @@ float random(float f)
     h |= 0x3F800000u;
     return uintBitsToFloat(h) - 1.0;
 }
+
+bool is_close(vec3 p0, vec3 p1, float e)
+{
+    vec3 df = abs(p0 - p1);
+    return (df.x < e && df.y < e && df.z < e);
+}
+
+#endif
+

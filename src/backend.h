@@ -13,7 +13,7 @@
 
 #define ONE_SECOND_IN_NANOSECONDS 1000000000
 
-#define VK_DEBUG_CHECKPOINT_NV
+//#define VK_DEBUG_CHECKPOINT_NV
 #define VK_RTX_ON
 
 struct window_t;
