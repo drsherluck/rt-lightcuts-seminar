@@ -23,6 +23,7 @@ struct frame_resource_t
     image_t  storage_image;
     VkSampler storage_image_sampler;
 
+    buffer_t ubo_bounds;
     buffer_t sbo_encoded_lights;
     buffer_t sbo_light_tree;
 

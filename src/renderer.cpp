@@ -277,6 +277,7 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
     auto& layout_set3 = set_layouts[3];
     add_binding(layout_set3, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
     add_binding(layout_set3, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
+    add_binding(layout_set3, 2, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
     build_descriptor_set_layout(context.device, layout_set3);
     // set 4 (sort)
     auto& layout_set4 = set_layouts[4];
@@ -529,11 +530,14 @@ void renderer_t::update_descriptors(scene_t& scene)
 
         // (morton encode)
         create_buffer(context, MAX_LIGHTS * sizeof(encoded_t), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &frame_resources[i].sbo_encoded_lights);
+        create_buffer(context, sizeof(light_bounds_t), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT, &frame_resources[i].ubo_bounds);
 
         VkDescriptorBufferInfo sbo_encoded_lights_info = { frame_resources[i].sbo_encoded_lights.handle, 0, VK_WHOLE_SIZE };
+        VkDescriptorBufferInfo ubo_bounds_info = { frame_resources[i].ubo_bounds.handle, 0, VK_WHOLE_SIZE };
         descriptor_set_t set3(set_layouts[3]);
         bind_buffer(set3, 0, &ubo_light_info);
         bind_buffer(set3, 1, &sbo_encoded_lights_info);
+        bind_buffer(set3, 2, &ubo_bounds_info);
         frame_resources[i].descriptor_sets.push_back(build_descriptor_set(descriptor_allocator, set3));
 
         // (sorter)
@@ -700,6 +704,19 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
 
         // lights
         copy_to_buffer(staging, frame_resources[frame_index].ubo_light, sizeof(light_t) * scene.lights.size(), (void*)scene.lights.data(), 0);
+        // bbox of all lights
+        v3 bbox_min = vec3(FLT_MAX);
+        v3 bbox_max = vec3(FLT_MIN);
+        for (auto const& light : scene.lights)
+        {
+            bbox_min = min(bbox_min, light.pos.xyz);
+            bbox_max = max(bbox_max, light.pos.xyz);
+        }
+        light_bounds_t bounds;
+        bounds.origin = bbox_min;
+        bounds.dims = bbox_max - bbox_min;
+        copy_to_buffer(staging, frame_resources[frame_index].ubo_bounds, sizeof(light_bounds_t), (void*)&bounds, 0);
+
        
         // upload camera data
         camera_ubo_t camera_data;

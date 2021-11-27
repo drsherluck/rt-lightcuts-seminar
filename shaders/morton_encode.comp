@@ -14,6 +14,11 @@ layout(std430, set = 0, binding = 1) writeonly buffer out_buffer
     encoded_t encoded_lights[];
 };
 
+layout(std140, set = 0, binding = 2) uniform bounds_ubo
+{
+   light_bounds_t bounds; 
+};
+
 layout(push_constant) uniform constants
 {
     int num_lights;
@@ -31,7 +36,8 @@ uvec3 bit_expansion(uvec3 x)
 
 uint encode_morton(vec3 v)
 {
-    v = min(max(normalize(v)*1024.0f, 0.0f), 1023.0f);
+    v = (v - bounds.origin)/bounds.dims;
+    v = min(max(v*1024.0f, 0.0f), 1023.0f);
     uvec3 bits = bit_expansion(uvec3(v));
     return (bits.z << 2) + (bits.y << 1) + bits.x;
 }

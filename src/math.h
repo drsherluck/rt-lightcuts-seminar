@@ -445,6 +445,24 @@ inline v3 cross(const v3& l, const v3& r)
     return res;
 }
 
+inline v3 min(const v3& l, const v3& r)
+{
+    v3 res;
+    res[0] = MIN(l.x, r.x);
+    res[1] = MIN(l.y, r.y);
+    res[2] = MIN(l.z, r.z);
+    return res;
+}
+
+inline v3 max(const v3& l, const v3& r)
+{
+    v3 res;
+    res[0] = MAX(l.x, r.x);
+    res[1] = MAX(l.y, r.y);
+    res[2] = MAX(l.z, r.z);
+    return res;
+}
+
 // section: v4
 
 inline v4 vec4()

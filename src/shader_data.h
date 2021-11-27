@@ -103,6 +103,14 @@ struct query_output_t
     uint primitive_id;
 };
 
+struct light_bounds_t
+{
+    vec3 origin;
+    float  _p0;
+    vec3 dims;
+    float  _p1;
+};
+
 #ifndef GLSL
 #undef mat3
 #undef mat4 

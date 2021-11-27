@@ -2,6 +2,7 @@
 #define COMMON_H
 
 #include <stdint.h>
+#include <cfloat>
 
 #define FORCEINLINE inline __attribute__((always_inline))
 #define EPSILON 0.000001
