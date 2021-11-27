@@ -119,30 +119,10 @@ void main()
     uint cut_size;
     light_cut_t light_cut[MAX_CUT_SIZE];
     selected_light_t selected_lights[MAX_CUT_SIZE];
-    gen_light_cut(world_position, light_cut, num_nodes, num_leaf_nodes, cut_size, num_samples);
-#if 0 
-    // debug: set num_cut_nodes to number of leafes for this test
-    vec4 color = vec4(0, 0, 0, 1);
-    for (int i = 0; i < cut_size; ++i)
-    {
-        uint id = light_cut[i].id;
-        if (id < (num_nodes - num_leaf_nodes))
-        {
-            switch (id)
-            {
-                case 0: color += vec4(1,0,0,0); break;
-                case 1: color += vec4(0,1,0,0); break;
-                case 2: color += vec4(0,0,1,0); break;
-            }
-        }
-    }
-    payload.color = color;
-    return;
-#endif 
+    gen_light_cut(world_position, world_normal, light_cut, num_nodes, num_leaf_nodes, cut_size, num_samples);
     float r = random(vec4(gl_LaunchIDEXT.xy, payload.seed, time));
-    select_lights(world_position, cut_size, light_cut, selected_lights, num_nodes, num_leaf_nodes, r);
+    select_lights(world_position, world_normal, cut_size, light_cut, selected_lights, num_nodes, num_leaf_nodes, r);
 
-    // limit lights to 1 sample for now
     vec3 temp_color = vec3(0);
     for (int i = 0; i < cut_size; ++i)
     {
@@ -191,7 +171,7 @@ void main()
             debug.primitive_id == gl_PrimitiveID && is_close(hitw, world_position, 0.01f))
         {
             int idx = i * 2;
-            if (attenuation > 0)
+            if (attenuation > 0)//&& inv_prob > 0)
             {
                 line_points[idx]     = hitw;
                 line_points[idx + 1] = light.pos;

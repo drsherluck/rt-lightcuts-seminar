@@ -53,30 +53,29 @@ float squared_max_distance(vec3 p, vec3 bbox_min, vec3 bbox_max)
     return dot(d,d);
 }
 
-// only using point lights 
-// from Walter et. al. 2005
-float geometric_term(vec3 p, vec3 bbox_min, vec3 bbox_max)
+float geometric_term(vec3 p, vec3 normal, vec3 bbox_min, vec3 bbox_max)
 {
-    float max_pz = max(bbox_min.z, bbox_max.z);
-    if (max_pz >= 0) 
-    {
-        vec3 min_p2 = min(bbox_min*bbox_min, bbox_max*bbox_max);
-        return max_pz * inversesqrt(min_p2.x + min_p2.y + max_pz*max_pz);
-    }
-    vec3 max_p2 = max(bbox_min*bbox_min, bbox_max*bbox_max);
-    return max_pz * inversesqrt(max_p2.x + max_p2.y + max_pz*max_pz);
+    // get max_pz (max distance to bbox along the normal)
+    vec3 b0 = normal * (bbox_min - p);
+    vec3 b1 = normal * (bbox_max - p);
+    vec3 pz = max(b0, b1);
+    float max_pz = pz.x + pz.y + pz.z;
+    if (max_pz <= 0) return 0;
+    vec3 d = min(max(bbox_min, p), bbox_max) - p;
+    vec3 tng = d - dot(d, normal) * normal;
+    return max_pz * inversesqrt(dot(tng, tng) + max_pz*max_pz);
 }
 
 // todo fix
 // it is wrong
-float calc_node_error(uint id, vec3 p)
+float calc_node_error(uint id, vec3 p, vec3 normal)
 {
     node_t node = nodes[id];
     float dmin2 = squared_min_distance(p, node.bbox_min, node.bbox_max);
-    return geometric_term(p, node.bbox_min, node.bbox_max) * node.intensity / dmin2;
+    return geometric_term(p, normal, node.bbox_min, node.bbox_max) * node.intensity / dmin2;
 }
 
-void gen_light_cut(vec3 p, inout light_cut_t light_cut[MAX_CUT_SIZE], int num_nodes, int num_leaf_nodes, out uint selected, in uint num_samples)
+void gen_light_cut(vec3 p, vec3 normal, inout light_cut_t light_cut[MAX_CUT_SIZE], int num_nodes, int num_leaf_nodes, out uint selected, in uint num_samples)
 {
     int max_leaf_id = num_nodes - num_leaf_nodes;
     uint size = min(num_samples, num_leaf_nodes); 
@@ -95,13 +94,13 @@ void gen_light_cut(vec3 p, inout light_cut_t light_cut[MAX_CUT_SIZE], int num_no
         uint ridx = get_array_index(rchild, num_nodes);
 
         light_cut[max_id].id = lchild;
-        light_cut[max_id].error = calc_node_error(lidx, p);
+        light_cut[max_id].error = calc_node_error(lidx, p, normal);
     
         // second child added to the back
         if (nodes[ridx].intensity > 0)
         {
             light_cut[selected].id = rchild;
-            light_cut[selected].error = calc_node_error(ridx, p);
+            light_cut[selected].error = calc_node_error(ridx, p, normal);
             selected++;
         }
 
@@ -121,6 +120,7 @@ void gen_light_cut(vec3 p, inout light_cut_t light_cut[MAX_CUT_SIZE], int num_no
 }
 
 void _select_lights(vec3 p, 
+    vec3 normal,
     uint light_cut_size, 
     inout light_cut_t light_cut[MAX_CUT_SIZE], 
     inout selected_light_t selected_lights[MAX_CUT_SIZE], 
@@ -143,11 +143,12 @@ void _select_lights(vec3 p,
             id = INVALID_ID;
         }
         selected_lights[i].id = id;
-        selected_lights[i].prob = 1.0/light_cut_size;
+        selected_lights[i].prob = 1.0;
     }
 }
 // get list of light samples
 void select_lights(vec3 p, 
+    vec3 normal,
     uint light_cut_size, 
     inout light_cut_t light_cut[MAX_CUT_SIZE], 
     inout selected_light_t selected_lights[MAX_CUT_SIZE], 
@@ -180,11 +181,10 @@ void select_lights(vec3 p,
             node_t n0 = nodes[c0_idx];
             node_t n1 = nodes[c1_idx];
            
-            // todo check if bogus
             if (n0.intensity + n1.intensity == 0) 
             {
                 id = INVALID_ID;
-                break;
+                break; // dead branch
             }
             if (n0.intensity == 0)
             {
@@ -197,13 +197,13 @@ void select_lights(vec3 p,
                 continue;
             }
             
-            float g0 = geometric_term(p, n0.bbox_min, n0.bbox_max);
-            float g1 = geometric_term(p, n1.bbox_min, n1.bbox_max);
+            float g0 = geometric_term(p, normal, n0.bbox_min, n0.bbox_max);
+            float g1 = geometric_term(p, normal, n1.bbox_min, n1.bbox_max);
 
             if (g0 + g1 == 0.0)
             {
                 id = INVALID_ID;
-                break;
+                break; // dead branch
             } 
 
             float gi0 = g0 * n0.intensity;
@@ -217,7 +217,7 @@ void select_lights(vec3 p,
             float prob_c0_max = w0_max / (w0_max + w1_max);
             float prob_c0_min = w0_min + w1_min == 0.0 ? gi0/(gi0 + gi1) : w0_min / (w0_min + w1_min);
             
-            float prob_c0 = (prob_c0_max + prob_c0_min) * 0.5;
+            float prob_c0 = (prob_c0_min + prob_c0_max) * 0.5;
             if (r < prob_c0) 
             {
                 prob *= prob_c0;

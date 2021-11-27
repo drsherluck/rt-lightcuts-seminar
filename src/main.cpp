@@ -14,9 +14,9 @@
 #define _randf() ((((f32) rand())/((f32) RAND_MAX)))
 #define _randf2() (_randf() * (rand() % 2 ? -1.0 : 1.0))
 
-#define USE_RANDOM_LIGHTS 1
-#define DISTANCE_FROM_ORIGIN 4
-#define RANDOM_LIGHT_COUNT 8 //(1 << 17) // 17 is around 100000 lights (sorting worse after this)
+#define USE_RANDOM_LIGHTS 0
+#define DISTANCE_FROM_ORIGIN 1
+#define RANDOM_LIGHT_COUNT 1 << 4 //(1 << 17) // 17 is around 100000 lights (sorting worse after this)
 
 static v3 random_color()
 {
@@ -80,16 +80,16 @@ int main()
         create_scene(renderer.context, mesh_data, scene);
         add_material(scene, porcelain);
         add_material(scene, ground);
-        add_entity(scene, 0, 0, translate4x4(0, 0, 4));
-        add_entity(scene, 0, 0, translate4x4(0, 1, 4) * scale4x4(0.5) * rotate4x4_y(radians(45)));
-        add_entity(scene, 1, 1, translate4x4(0, -0.5, 4) * scale4x4(2));
+        add_entity(scene, 0, 0, translate4x4(0, 0, 0));
+        add_entity(scene, 0, 0, translate4x4(0, 1, 0) * scale4x4(0.5) * rotate4x4_y(radians(45)));
+        add_entity(scene, 1, 1, translate4x4(0, -0.5, 0) * scale4x4(2));
 #if !USE_RANDOM_LIGHTS
-        add_light(scene, vec3(2, 2.5, 4), vec3(1, 0, 0));
-        add_light(scene, vec3(1, 2, 6), vec3(0, 1, 0));
-        add_light(scene, vec3(-1, 4, 3), vec3(0, 0, 1));
-        add_light(scene, vec3(-2, 3, 8), vec3(1, 1, 1));
+        add_light(scene, vec3(2, 1, -2), vec3(1, 0, 0));
+        add_light(scene, vec3(1, 2, 2), vec3(0, 1, 0));
+        add_light(scene, vec3(-2, 4, -1), vec3(0, 0, 1));
+        add_light(scene, vec3(-2, 3, 2), vec3(1, 1, 1));
 #else
-        add_random_lights(scene, RANDOM_LIGHT_COUNT, vec3(0,1,4), DISTANCE_FROM_ORIGIN);
+        add_random_lights(scene, RANDOM_LIGHT_COUNT, vec3(0), DISTANCE_FROM_ORIGIN);
 #endif
         std::sort(std::begin(scene.entities), std::end(scene.entities),
                 [](const entity_t& a, const entity_t& b) 
@@ -105,14 +105,14 @@ int main()
 
     camera_t camera;
     camera.set_perspective(radians(60.0f), aspect);
-    camera.position = vec3(0, 3, -1);
-    camera.lookat(vec3(0, 0, 4));
+    camera.position = vec3(0, 3, -4);
+    camera.lookat(vec3(0));
     camera.update(0, window);
 
     camera_t topdown;
     topdown.set_orthographic(7.0f, aspect);
-    topdown.position = vec3(0, 5, 4);
-    topdown.lookat(vec3(0, 0, 4));
+    topdown.position = vec3(0, 5, 0);
+    topdown.lookat(vec3(0));
     topdown.update(0, window);
     topdown.freeze();
     
