@@ -8,8 +8,8 @@
 
 #include <algorithm>
 
-#define WIDTH 640//1024
-#define HEIGHT 480//768
+#define WIDTH 1024
+#define HEIGHT 768
 
 #define _randf() ((((f32) rand())/((f32) RAND_MAX)))
 #define _randf2() (_randf() * (rand() % 2 ? -1.0 : 1.0))
@@ -174,7 +174,14 @@ int main()
             render_state.render_step_mode = !render_state.render_step_mode;
             render_state.step = 0;
         }
-        if (is_key_pressed(window, KEY_N))
+        if (is_key_pressed(window, KEY_J))
+        {
+            if (render_state.render_step_mode)
+            {
+                render_state.step = MAX(render_state.step - 1, 0);
+            }
+        }
+        if (is_key_pressed(window, KEY_K))
         {
             if (render_state.render_step_mode)
             {
