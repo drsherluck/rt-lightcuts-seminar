@@ -59,7 +59,10 @@ struct renderer_t
     window_t*              window;
     gpu_context_t          context;
     profiler_t             profiler;
-   
+  
+    // todo convert to texture_t
+    image_t                color_attachment[BUFFERED_FRAMES];
+    VkSampler              color_sampler[BUFFERED_FRAMES];
     image_t                depth_attachment[BUFFERED_FRAMES];
     VkSampler              depth_sampler[BUFFERED_FRAMES];
     VkFramebuffer          prepass_framebuffer[BUFFERED_FRAMES];
@@ -85,7 +88,6 @@ struct renderer_t
     shader_binding_table_t sbt;
     shader_binding_table_t query_sbt;
     staging_buffer_t       staging;
-
 
     // shared by all frames 
     buffer_t ray_lines_info;

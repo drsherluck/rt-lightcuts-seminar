@@ -33,27 +33,44 @@ struct batch_t
 void renderer_t::create_prepass_render_pass()
 {
     // create render pass;
-	VkAttachmentDescription attachment = {};
-	attachment.format         = VK_FORMAT_D32_SFLOAT; 
-	attachment.samples        = VK_SAMPLE_COUNT_1_BIT;
-	attachment.loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
-	attachment.storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
-	attachment.stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-	attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-	attachment.initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
-	attachment.finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
+	VkAttachmentDescription attachment[2] = {};
+    // depth
+	attachment[0].format         = VK_FORMAT_D32_SFLOAT; 
+	attachment[0].samples        = VK_SAMPLE_COUNT_1_BIT;
+	attachment[0].loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachment[0].storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
+	attachment[0].stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	attachment[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachment[0].initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
+	attachment[0].finalLayout    = VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL;
 
-	VkAttachmentReference reference =  {};
-    reference.attachment = 0;
-    reference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    // albedo
+	attachment[1].format         = VK_FORMAT_R32G32B32A32_SFLOAT; 
+	attachment[1].samples        = VK_SAMPLE_COUNT_1_BIT;
+	attachment[1].loadOp         = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachment[1].storeOp        = VK_ATTACHMENT_STORE_OP_STORE;
+	attachment[1].stencilLoadOp  = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	attachment[1].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachment[1].initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
+	attachment[1].finalLayout    = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	VkAttachmentReference depth_ref =  {};
+    depth_ref.attachment = 0;
+    depth_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    
+	VkAttachmentReference color_ref =  {};
+    color_ref.attachment = 1;
+    color_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
 
 	VkSubpassDescription subpass = {};
 	subpass.pipelineBindPoint       = VK_PIPELINE_BIND_POINT_GRAPHICS;
 	subpass.inputAttachmentCount    = 0;
-	subpass.colorAttachmentCount    = 0;
-	subpass.pDepthStencilAttachment = &reference;
+	subpass.colorAttachmentCount    = 1;
+    subpass.pColorAttachments       = &color_ref;
+	subpass.pDepthStencilAttachment = &depth_ref;
 
-    VkSubpassDependency dependencies[2] = {};
+    VkSubpassDependency dependencies[3] = {};
 	dependencies[0].srcSubpass      = VK_SUBPASS_EXTERNAL;
 	dependencies[0].dstSubpass      = 0;
 	dependencies[0].srcStageMask    = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
@@ -70,13 +87,22 @@ void renderer_t::create_prepass_render_pass()
     dependencies[1].dstAccessMask   = VK_ACCESS_SHADER_READ_BIT;
     dependencies[1].dependencyFlags = VK_DEPENDENCY_BY_REGION_BIT;
 
+	dependencies[2].srcSubpass      = VK_SUBPASS_EXTERNAL;
+	dependencies[2].dstSubpass      = 0;
+	dependencies[2].srcStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	dependencies[2].dstStageMask    = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+	dependencies[2].srcAccessMask   = 0;
+	dependencies[2].dstAccessMask   = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+	dependencies[2].dependencyFlags = 0;
+
+
 	VkRenderPassCreateInfo create_info = {};
 	create_info.sType           = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-	create_info.attachmentCount = 1;
-	create_info.pAttachments    = &attachment;
+	create_info.attachmentCount = 2;
+	create_info.pAttachments    = attachment;
 	create_info.subpassCount    = 1;
 	create_info.pSubpasses      = &subpass;
-	create_info.dependencyCount = 2;
+	create_info.dependencyCount = 3;
 	create_info.pDependencies   = dependencies;
 
 	VK_CHECK( vkCreateRenderPass(context.device, &create_info, nullptr, &prepass_render_pass) );
@@ -85,18 +111,28 @@ void renderer_t::create_prepass_render_pass()
     // create framebuffer
     for (i32 i = 0; i < BUFFERED_FRAMES; ++i)
     {
+        // depth
         create_image(context, VK_IMAGE_TYPE_2D, VK_FORMAT_D32_SFLOAT,
                 context.swapchain.extent.width, context.swapchain.extent.height,
                 VkImageUsageFlagBits(VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT),
                 VK_IMAGE_ASPECT_DEPTH_BIT,
                 &depth_attachment[i]);
         create_sampler(context, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, &depth_sampler[i]);
+        
+        // color 
+        create_image(context, VK_IMAGE_TYPE_2D, VK_FORMAT_R32G32B32A32_SFLOAT,
+                context.swapchain.extent.width, context.swapchain.extent.height,
+                VkImageUsageFlagBits(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT),
+                VK_IMAGE_ASPECT_COLOR_BIT,
+                &color_attachment[i]);
+        create_sampler(context, VK_FILTER_NEAREST, VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE, &color_sampler[i]);
 
+        VkImageView views[2] = { depth_attachment[i].view, color_attachment[i].view };
 		VkFramebufferCreateInfo info = {};
 		info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
 		info.renderPass = prepass_render_pass;
-		info.attachmentCount = 1;
-		info.pAttachments = &depth_attachment[i].view;
+		info.attachmentCount = 2;
+		info.pAttachments = views;
 		info.width  = context.swapchain.extent.width;
 		info.height = context.swapchain.extent.height;
 		info.layers = 1;
@@ -268,6 +304,7 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
         pipeline_description_t pipeline_description;
         init_graphics_pipeline_description(context, pipeline_description);
         add_shader(pipeline_description, VK_SHADER_STAGE_VERTEX_BIT,   "main", "shaders/prepass.vert.spv");
+        add_shader(pipeline_description, VK_SHADER_STAGE_FRAGMENT_BIT,   "main", "shaders/prepass.frag.spv");
         pipeline_description.render_pass = prepass_render_pass;
         prepass_pipeline.descriptor_set_layouts.push_back(layout_set0.handle); // dont care
         build_graphics_pipeline(context, pipeline_description, prepass_pipeline);
@@ -701,8 +738,10 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
         { // prepass
             auto cmd = frame_resources[frame_index].cmd_prepass;
             VK_CHECK( begin_command_buffer(cmd) );
-            VkClearValue clear = {};
-            clear.depthStencil = {1, 0};
+            VkClearValue clear[2] = {};
+            // attachment order :/
+            clear[1].color = {0, 0, 0, 0}; 
+            clear[0].depthStencil = {1, 0};
 
             VkRenderPassBeginInfo begin_info{};
             begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
@@ -710,8 +749,8 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
             begin_info.renderPass = prepass_render_pass;
             begin_info.framebuffer = prepass_framebuffer[frame_index];
             begin_info.renderArea = { {0,0}, context.swapchain.extent };
-            begin_info.clearValueCount = 1;
-            begin_info.pClearValues = &clear;
+            begin_info.clearValueCount = 2;
+            begin_info.pClearValues = clear;
             vkCmdBeginRenderPass(cmd, &begin_info, VK_SUBPASS_CONTENTS_INLINE);
             vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, prepass_pipeline.handle);
             u32 first_instance_id = 0;
