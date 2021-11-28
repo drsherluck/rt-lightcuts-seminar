@@ -14,9 +14,9 @@
 #define _randf() ((((f32) rand())/((f32) RAND_MAX)))
 #define _randf2() (_randf() * (rand() % 2 ? -1.0 : 1.0))
 
-#define USE_RANDOM_LIGHTS 0
+#define USE_RANDOM_LIGHTS 1
 #define DISTANCE_FROM_ORIGIN 1
-#define RANDOM_LIGHT_COUNT 1 << 4 //(1 << 17) // 17 is around 100000 lights (sorting worse after this)
+#define RANDOM_LIGHT_COUNT 5 //(1 << 17) // 17 is around 100000 lights (sorting worse after this)
 
 static v3 random_color()
 {
