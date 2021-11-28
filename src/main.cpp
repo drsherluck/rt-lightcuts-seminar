@@ -228,7 +228,7 @@ int main()
                 move_lights(scene, vec4(-2*dt, 0, 0, 0));
             }
 
-            if (is_key_pressed(window, KEY_PLUS)) 
+            if (is_key_pressed(window, KEY_EQUAL)) 
             {
                 render_state.num_samples = MIN(render_state.num_samples + 1, scene.lights.size());
                 LOG_INFO("num samples = %d", render_state.num_samples);
