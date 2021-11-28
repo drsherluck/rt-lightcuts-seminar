@@ -125,6 +125,7 @@ int main()
     render_state.render_depth_buffer = false;
     render_state.render_sample_lines = false;
     render_state.num_samples = 1;
+    render_state.render_only_selected_nodes = false;
     render_state.render_step_mode = false;
     render_state.step = 0;
 
@@ -187,6 +188,10 @@ int main()
             {
                 render_state.step++;
             }
+        }
+        if (is_key_pressed(window, KEY_2)) 
+        {
+            render_state.render_only_selected_nodes = !render_state.render_only_selected_nodes;
         }
 
         if (!pause) 

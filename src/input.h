@@ -7,7 +7,7 @@
 #include <set>
 #include <unordered_map>
 
-#define NUM_KEYS 21
+#define NUM_KEYS 22
 #define KEY_W   0
 #define KEY_A   1
 #define KEY_S   2
@@ -29,6 +29,7 @@
 #define KEY_1           18
 #define KEY_J           19
 #define KEY_K           20
+#define KEY_2           21
 
 #define NUM_BUTTONS 2
 #define MOUSE_BUTTON_1 0

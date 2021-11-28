@@ -29,6 +29,7 @@ struct frame_resource_t
 
     // here are bbox lines writen
     buffer_t vbo_lines;
+    buffer_t sbo_nodes_highlight;
 
     // lines for visualizing sampling
     buffer_t vbo_ray_lines;
@@ -51,6 +52,7 @@ struct render_state_t
     bool render_sample_lines; 
     v2   screen_uv; 
 
+    bool render_only_selected_nodes;
     bool render_step_mode;
     i32  step;
 };

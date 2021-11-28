@@ -75,6 +75,11 @@ layout(std430, set = 2, binding = 1) writeonly buffer vbo_lines
     vec3 line_points[];
 };
 
+layout(std430, set = 2, binding = 2) writeonly buffer hl_nodes
+{
+    bool cut_nodes[];
+};
+
 layout(push_constant) uniform constants
 {
     int num_nodes;
@@ -123,6 +128,7 @@ void main()
     float r = random(vec4(gl_LaunchIDEXT.xy, payload.seed, time));
     select_lights(world_position, world_normal, cut_size, light_cut, selected_lights, num_nodes, num_leaf_nodes, r);
 
+    vec3 hitw = vec3(gl_ObjectToWorldEXT * vec4(debug.hit_pos, 1.0));
     vec3 temp_color = vec3(0);
     for (int i = 0; i < cut_size; ++i)
     {
@@ -166,7 +172,6 @@ void main()
             }
         }
        
-        vec3 hitw = vec3(gl_ObjectToWorldEXT * vec4(debug.hit_pos, 1.0));
         if (debug.hit && debug.instance_id == gl_InstanceCustomIndexEXT &&
             debug.primitive_id == gl_PrimitiveID && is_close(hitw, world_position, 0.01f))
         {
@@ -181,6 +186,8 @@ void main()
                 line_points[idx]     = vec3(0);
                 line_points[idx + 1] = vec3(0);
             }
+            uint id = get_array_index(light_cut[i].id, num_nodes);
+            cut_nodes[id] = true;
         }
         attenuation *= 1.0 / (distance * distance);
         vec3 px = light.color * attenuation * (diffuse + specular) * inv_prob;
