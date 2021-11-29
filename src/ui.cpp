@@ -4,6 +4,7 @@
 #include <backends/imgui_impl_vulkan.h>
 #include "renderer.h"
 #include "scene.h"
+
 #include <cstdio>
 
 void init_imgui(imgui_t& imgui, gpu_context_t& ctx, VkRenderPass render_pass, window_t*  window)
@@ -41,12 +42,13 @@ void destroy_imgui(imgui_t& imgui)
 }
 
 // inside main loop
-bool new_frame(imgui_t& imgui, render_state_t* state, scene_t* scene)
+bool new_frame(imgui_t& imgui, render_state_t* state, scene_t* scene, frame_time_t& time)
 {
     ImGui_ImplVulkan_NewFrame();
     ImGui_ImplGlfw_NewFrame();
     ImGui::NewFrame();
     ImGui::Begin("Render settings");
+    ImGui::Text("FPS: %d", get_average_fps(time));
     ImGui::Checkbox("Render lights",  &state->render_lights);
     ImGui::Checkbox("Render bounding boxes",  &state->render_bboxes);
     if (!state->render_bboxes) 
@@ -64,26 +66,29 @@ bool new_frame(imgui_t& imgui, render_state_t* state, scene_t* scene)
     ImVec2 region = ImGui::GetContentRegionAvail();
     region.y = MIN(region.y, 150);
 
-    ImGui::Text("Scene");
-    ImGui::BeginListBox("Lights", region);
-    ImGui::BeginTable("Lights Table", 2);
+    if (!state->use_random_lights && ImGui::BeginListBox("Lights", region))
     {
-        ImGuiColorEditFlags flags = ImGuiColorEditFlags_DisplayRGB | ImGuiColorEditFlags_NoInputs |
-            ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_PickerHueWheel;
-        int i = 0;
-        for (auto& light : scene->lights)
+        ImGui::Text("Scene");
+        if (ImGui::BeginTable("Lights Table", 2))
         {
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn();
-            char buf[50];
-            sprintf(buf, "%d", i++); 
-            ImGui::ColorEdit3(buf, light.color.data, flags);
-            ImGui::TableNextColumn();
-            ImGui::Text("light");
+            ImGuiColorEditFlags flags = ImGuiColorEditFlags_DisplayRGB | ImGuiColorEditFlags_NoInputs |
+                ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_PickerHueWheel;
+            int i = 0;
+            for (auto& light : scene->lights)
+            {
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                char buf[50];
+                sprintf(buf, "%d", i++); 
+                ImGui::ColorEdit3(buf, light.color.data, flags);
+                ImGui::TableNextColumn();
+                const char* label = "light";
+                ImGui::Text("%s", label);
+            }
+            ImGui::EndTable();
         }
+        ImGui::EndListBox();
     }
-    ImGui::EndTable();
-    ImGui::EndListBox();
     if (ImGui::Button("Add light"))
     {
         v3 dir = normalize(vec3(_randf2(), _randf(), _randf2()));

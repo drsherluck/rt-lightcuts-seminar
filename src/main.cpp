@@ -137,7 +137,7 @@ int main()
         run = window.poll_events();
 
         render_state_t prev = render_state;
-        bool imgui_mouse = new_frame(renderer.imgui, &render_state, &scene);
+        bool imgui_mouse = new_frame(renderer.imgui, &render_state, &scene, time);
         if (prev.use_random_lights != render_state.use_random_lights || render_state.num_random_lights != prev.num_random_lights)
         {
             scene.lights.clear();

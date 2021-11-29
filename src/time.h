@@ -30,7 +30,7 @@ inline u32 get_fps(frame_time_t& time)
 inline u32 get_average_fps(frame_time_t& time)
 {
     u32 fps = 0;
-    if (time.delta)
+    if (time.average_dt)
     {
         fps = static_cast<u32>(1.0/time.average_dt);
     }
@@ -44,7 +44,6 @@ inline f32 delta_in_seconds(frame_time_t& time)
 
 inline void update_time(frame_time_t& time, f32 frame_dt = 0.0)
 {
-    static f32 sec = std::chrono::duration<f32>().count();
     do {
         time.curr = std::chrono::steady_clock::now();
         time.delta = std::chrono::duration_cast<std::chrono::duration<f32>>(time.curr - time.prev).count();
@@ -52,7 +51,7 @@ inline void update_time(frame_time_t& time, f32 frame_dt = 0.0)
     time.prev = time.curr;
     time._total_dt += time.delta;
     time._counter++;
-    if (time._total_dt >= sec * 0.1)
+    if (time._total_dt >= 0.25)
     {
         time.prev_average_dt = time.average_dt;
         time.average_dt = time._total_dt / time._counter;
