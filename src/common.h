@@ -18,6 +18,9 @@ typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
+#define _randf() ((((f32) rand())/((f32) RAND_MAX)))
+#define _randf2() (_randf() * (rand() % 2 ? -1.0 : 1.0))
+
 inline u64 align(u64 offset, u64 alignment)
 {
     return (offset + alignment - 1) & ~(alignment - 1);

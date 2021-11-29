@@ -5,12 +5,9 @@
 #include "shader_data.h"
 #include "time.h"
 #include "window.h"
+#include "ui.h"
 
 #include <cassert>
-
-// used for defining the size of vbo_ray_lines
-#define MAX_LIGHTS_SAMPLED 32
-
 #define ENABLE_MORTON_ENCODE 1
 #define ENABLE_SORT_LIGHTS 1
 #define ENABLE_LIGHT_TREE 1
@@ -18,10 +15,6 @@
 #define ENABLE_VERIFY 0
 
 #define MAX_DESCRIPTOR_SETS 50
-#define MAX_ENTITIES 100
-#define MAX_TREE_HEIGTH 20
-#define MAX_LIGHTS (1 << 17)
-#define MAX_LIGHT_TREE_SIZE (1 << 18)
 
 // todo: remove
 struct batch_t 
@@ -486,6 +479,8 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
         points_pipeline.descriptor_set_layouts.push_back(layout_set0.handle); // need cameraubo
         build_graphics_pipeline(context, pipeline_description, points_pipeline);
     }
+
+    init_imgui(imgui, context, context.render_pass, window);
 }
 
 void renderer_t::update_descriptors(scene_t& scene)
@@ -660,6 +655,7 @@ void renderer_t::update_descriptors(scene_t& scene)
 renderer_t::~renderer_t()
 {
     wait_idle(context);
+    destroy_imgui(imgui);
     LOG_INFO("Descructor renderer");
     for (auto& f : frame_resources)
     {
@@ -681,6 +677,8 @@ renderer_t::~renderer_t()
     {
         vkDestroyDescriptorSetLayout(context.device, l.handle, nullptr);
     }
+    // free empty buffer
+    free(empty_buffer);
 
     vkDestroyDescriptorPool(context.device, descriptor_allocator.descriptor_pool, nullptr);
     LOG_INFO("Destroy pipelines");
@@ -700,7 +698,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
     VK_CHECK( vkWaitForFences(context.device, 1, &frame_resources[frame_index].rt_fence, VK_TRUE, ONE_SECOND_IN_NANOSECONDS) );
     vkResetFences(context.device, 1, &frame_resources[frame_index].rt_fence);
     get_next_swapchain_image(context, frame);
-    
+
     {
         auto pool = frame->command_pool;
         VK_CHECK( vkResetCommandPool(context.device, pool, 0) );
@@ -768,15 +766,15 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
 
         // clear the ray lines buffer
         {
-            v4 empty_buffer[MAX_LIGHTS_SAMPLED * 2] = {};
-            copy_to_buffer(staging, frame_resources[frame_index].vbo_ray_lines, MAX_LIGHTS_SAMPLED * 2 * sizeof(v4), (void*)empty_buffer, 0);
+            if (!empty_buffer)
+            {
+                empty_buffer = calloc(MAX_LIGHTS * 24, sizeof(v4));
+            }
+            copy_to_buffer(staging, frame_resources[frame_index].vbo_ray_lines, MAX_LIGHTS_SAMPLED * 2 * sizeof(v4), empty_buffer, 0);
+            copy_to_buffer(staging, frame_resources[frame_index].vbo_lines, MAX_LIGHTS * 24 * sizeof(v4), empty_buffer, 0);
+            copy_to_buffer(staging, frame_resources[frame_index].sbo_nodes_highlight, MAX_LIGHT_TREE_SIZE * sizeof(i32), empty_buffer, 0);
         }
-        // clear highlights
-        {
-            i32 empty_buffer[MAX_LIGHT_TREE_SIZE] = {};
-            copy_to_buffer(staging, frame_resources[frame_index].sbo_nodes_highlight, MAX_LIGHT_TREE_SIZE * sizeof(i32), (void*)empty_buffer, 0);
-        }
-        
+
         VkSemaphore upload_complete;
         end_upload(staging, &upload_complete);
     
@@ -1147,14 +1145,17 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
         vkCmdBeginRenderPass(cmd, &begin_info, VK_SUBPASS_CONTENTS_INLINE);
 
         // draw bbox lines
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, lines_pipeline.handle);
-        VkDescriptorSet sets[2] = { 
-            frame_resources[frame_index].descriptor_sets[0],
-            frame_resources[frame_index].descriptor_sets[9],
-        };
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, lines_pipeline.layout, 0, 2, sets, 0, nullptr);
         VkDeviceSize offsets[1] = {0};
-        vkCmdBindVertexBuffers(cmd, 0, 1, &frame_resources[frame_index].vbo_lines.handle, offsets);
+        if (state.render_bboxes || state.render_sample_lines)
+        {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, lines_pipeline.handle);
+            VkDescriptorSet sets[2] = { 
+                frame_resources[frame_index].descriptor_sets[0],
+                frame_resources[frame_index].descriptor_sets[9],
+            };
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, lines_pipeline.layout, 0, 2, sets, 0, nullptr);
+        }
+
         struct {
             v3 color;
             i32 is_bbox; // bool
@@ -1168,21 +1169,26 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
         constants.only_selected = static_cast<i32>(state.render_only_selected_nodes);
         constants.highlight = vec3(1,0,0);
         constants.offset = num_leaf_nodes;
-        vkCmdPushConstants(cmd, lines_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(constants), &constants);
-        u32 h = static_cast<u32>(log2(num_leaf_nodes));
-        u32 vertex_count = 24 * ((1 << h) - 1);
-        if (state.render_step_mode)
+
+        if (state.render_bboxes)
         {
-            u32 _h = h == 0 ? 0 : h - 1;
-            u32 s = MIN(state.step, h);
-            u32 l = 0;
-            for (u32 i = 0; i < s; i++)
+            vkCmdBindVertexBuffers(cmd, 0, 1, &frame_resources[frame_index].vbo_lines.handle, offsets);
+            vkCmdPushConstants(cmd, lines_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(constants), &constants);
+            u32 h = static_cast<u32>(log2(num_leaf_nodes));
+            u32 vertex_count = 24 * ((1 << h) - 1);
+            if (state.render_step_mode)
             {
-                l |= (1 << (_h - i));
+                u32 _h = h == 0 ? 0 : h - 1;
+                u32 s = MIN(state.step, h);
+                u32 l = 0;
+                for (u32 i = 0; i < s; i++)
+                {
+                    l |= (1 << (_h - i));
+                }
+                vertex_count = 24 * l;
             }
-            vertex_count = 24 * l;
+            vkCmdDraw(cmd, vertex_count, 1, 0, 0);
         }
-        vkCmdDraw(cmd, vertex_count, 1, 0, 0);
 
         // draw ray lines from sampled here
         if (state.render_sample_lines)
@@ -1197,11 +1203,14 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
         }
 
         // draw light points
-        vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, points_pipeline.handle);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, points_pipeline.layout, 0,
-                1, &frame_resources[frame_index].descriptor_sets[0], 0, nullptr);
-        vkCmdBindVertexBuffers(cmd, 0, 1, &frame_resources[frame_index].ubo_light.handle, offsets);
-        vkCmdDraw(cmd, num_lights, 1, 0, 0);
+        if (state.render_lights)
+        {
+            vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, points_pipeline.handle);
+            vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, points_pipeline.layout, 0,
+                    1, &frame_resources[frame_index].descriptor_sets[0], 0, nullptr);
+            vkCmdBindVertexBuffers(cmd, 0, 1, &frame_resources[frame_index].ubo_light.handle, offsets);
+            vkCmdDraw(cmd, num_lights, 1, 0, 0);
+        }
 
         vkCmdEndRenderPass(cmd);
 
@@ -1229,6 +1238,9 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
             vkCmdPushConstants(cmd, debug_pipeline.layout, VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(constants), &constants);
         }
         vkCmdDraw(cmd, 4, 1, 0, 0);
+
+        // draw gui
+        render_imgui(cmd, imgui);
         vkCmdEndRenderPass(cmd);
         VK_CHECK( vkEndCommandBuffer(cmd) );
 

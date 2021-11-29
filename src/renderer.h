@@ -6,6 +6,13 @@
 #include "pipeline.h"
 #include "descriptor.h"
 #include "profiler.h"
+#include "ui.h"
+
+#define MAX_LIGHTS_SAMPLED 32
+#define MAX_ENTITIES 100
+#define MAX_TREE_HEIGTH 17
+#define MAX_LIGHTS (1 << MAX_TREE_HEIGTH)
+#define MAX_LIGHT_TREE_SIZE (1 << (MAX_TREE_HEIGTH + 1))
 
 struct scene_t;
 struct camera_t;
@@ -47,14 +54,20 @@ struct frame_resource_t
 // that can be changed at runtime
 struct render_state_t
 {
-    i32  num_samples;
-    bool render_depth_buffer;
-    bool render_sample_lines; 
+    i32  num_samples = 1;
+    bool render_depth_buffer = false;
+    bool render_sample_lines = false; 
     v2   screen_uv; 
+    
+    bool render_lights = true;
+    bool render_bboxes = false;
+    bool render_only_selected_nodes = false;
+    bool render_step_mode = false;
+    i32  step = 0;
 
-    bool render_only_selected_nodes;
-    bool render_step_mode;
-    i32  step;
+    bool use_random_lights = false;
+    i32  num_random_lights = 1;
+    f32  distance_from_origin = 1;
 };
 
 struct renderer_t
@@ -62,6 +75,7 @@ struct renderer_t
     window_t*              window;
     gpu_context_t          context;
     profiler_t             profiler;
+    imgui_t                imgui;
   
     // todo convert to texture_t
     image_t                color_attachment[BUFFERED_FRAMES];
@@ -91,6 +105,9 @@ struct renderer_t
     shader_binding_table_t sbt;
     shader_binding_table_t query_sbt;
     staging_buffer_t       staging;
+
+    // used to clear some gpu buffers
+    void* empty_buffer = nullptr;
 
     // shared by all frames 
     buffer_t ray_lines_info;

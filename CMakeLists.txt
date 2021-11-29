@@ -60,20 +60,37 @@ else()
 endif()
 target_sources(engine PRIVATE ${SOURCES})
 
+
+### stb_image, tinyobj, spir_reflect and vma ###
 file(GLOB EXTERNAL_SOURCES external/*.c external/*.cpp)
 add_library(ext_lib STATIC ${EXTERNAL_SOURCES})
 target_include_directories(ext_lib INTERFACE "${PROJECT_SOURCE_DIR}/external")
 
 ### Compile GLFW ###
+### Add Dear ImGui ###
 if (NOT USING_GLFW EQUAL -1)
     set( GLFW_BUILD_DOCS OFF CACHE BOOL  "GLFW lib only" )
     set( GLFW_INSTALL OFF CACHE BOOL  "GLFW lib only" )
     add_subdirectory(external/glfw)
     target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE glfw)
+
+    add_library(imgui STATIC)
+    target_include_directories(imgui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui")
+    target_sources(imgui PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui/imgui.h"
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui/imgui.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui/imgui_demo.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui/imgui_draw.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui/imgui_widgets.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui/imgui_tables.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui/backends/imgui_impl_vulkan.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui/backends/imgui_impl_glfw.cpp"
+    )
+    target_link_libraries(imgui PUBLIC ${Vulkan_LIBRARY} glfw)
 endif()
 
 ### Link external libraries ###
-target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ${Vulkan_LIBRARY} ext_lib)
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE ${Vulkan_LIBRARY} ext_lib imgui)
 
 if(UNIX)
 	find_package(PkgConfig)

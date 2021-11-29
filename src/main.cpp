@@ -5,18 +5,16 @@
 #include "camera.h"
 #include "log.h"
 #include "time.h"
+#include "ui.h"
 
 #include <algorithm>
 
 #define WIDTH 1024
 #define HEIGHT 768
 
-#define _randf() ((((f32) rand())/((f32) RAND_MAX)))
-#define _randf2() (_randf() * (rand() % 2 ? -1.0 : 1.0))
-
-#define USE_RANDOM_LIGHTS 1
+#define USE_RANDOM_LIGHTS 0
 #define DISTANCE_FROM_ORIGIN 1
-#define RANDOM_LIGHT_COUNT 5 //(1 << 17) // 17 is around 100000 lights (sorting worse after this)
+#define RANDOM_LIGHT_COUNT 1<<10//(1 << 17) // 17 is around 100000 lights (sorting worse after this)
 
 static v3 random_color()
 {
@@ -40,6 +38,16 @@ static void add_random_lights(scene_t& scene, u32 count, v3 origin, f32 distance
         v3 dir = normalize(vec3(_randf2(), _randf(), _randf2()));
         v3 pos = origin + dir * distance;
         add_light(scene, pos, color);
+    }
+}
+
+static void move_lights_from_origin(scene_t& scene, v3 origin, f32 distance)
+{
+    v4 orig  = vec4(origin, 0);
+    for (auto& light : scene.lights)
+    {
+        v4 dir = normalize(light.pos - vec4(origin, 1));
+        light.pos = orig + dir * distance;
     }
 }
 
@@ -102,7 +110,6 @@ int main()
     renderer.update_descriptors(scene);
 
     f32 aspect = window.get_aspect_ratio();
-
     camera_t camera;
     camera.set_perspective(radians(60.0f), aspect);
     camera.position = vec3(0, 3, -4);
@@ -122,19 +129,36 @@ int main()
     bool pause = false;
 
     render_state_t render_state;
-    render_state.render_depth_buffer = false;
-    render_state.render_sample_lines = false;
-    render_state.num_samples = 1;
-    render_state.render_only_selected_nodes = false;
-    render_state.render_step_mode = false;
-    render_state.step = 0;
-
     camera_t *curr_camera = &camera;
     while(run)
     {
         update_time(time, 1.0/144.0);
         f32 dt = delta_in_seconds(time);
         run = window.poll_events();
+
+        render_state_t prev = render_state;
+        bool imgui_mouse = new_frame(renderer.imgui, &render_state, &scene);
+        if (prev.use_random_lights != render_state.use_random_lights || render_state.num_random_lights != prev.num_random_lights)
+        {
+            scene.lights.clear();
+            if (render_state.use_random_lights)
+            {
+                add_random_lights(scene, render_state.num_random_lights, vec3(0), render_state.distance_from_origin);
+            }
+            else
+            {
+                // default lights
+                add_light(scene, vec3(2, 1, -2), vec3(1, 0, 0));
+                add_light(scene, vec3(1, 2, 2), vec3(0, 1, 0));
+                add_light(scene, vec3(-2, 4, -1), vec3(0, 0, 1));
+                add_light(scene, vec3(-2, 3, 2), vec3(1, 1, 1));
+            }
+        }
+        // move lighs from origin if it was changed
+        if (render_state.distance_from_origin != prev.distance_from_origin)
+        {
+            move_lights_from_origin(scene, vec3(0), render_state.distance_from_origin);
+        }
 
         if (is_key_pressed(window, KEY_ESC))
         {
@@ -193,10 +217,14 @@ int main()
         {
             render_state.render_only_selected_nodes = !render_state.render_only_selected_nodes;
         }
-
+    
         if (!pause) 
         {
-            curr_camera->update(dt, window);
+            // update camera only if ui is not clicked 
+            if (!imgui_mouse)
+            {
+                curr_camera->update(dt, window);
+            }
             if (is_key_down(window, KEY_ARROW_UP))
             {
                 if (!is_key_down(window, KEY_SHIFT_L))
@@ -255,6 +283,5 @@ int main()
     }
 
     destroy_scene(renderer.context, scene);
-
     return 0;
 }

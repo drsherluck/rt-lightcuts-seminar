@@ -277,9 +277,9 @@ bool build_graphics_pipeline(gpu_context_t& ctx, pipeline_description_t& desc, p
 	depth_stencil_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
 	depth_stencil_info.pNext = nullptr;
 	depth_stencil_info.flags = 0;
-	depth_stencil_info.depthTestEnable = VK_TRUE;
-	depth_stencil_info.depthWriteEnable = VK_TRUE;
-	depth_stencil_info.depthCompareOp = VK_COMPARE_OP_LESS;
+	depth_stencil_info.depthTestEnable = desc.depth_test ? VK_TRUE : VK_FALSE;
+	depth_stencil_info.depthWriteEnable = desc.depth_test ? VK_TRUE : VK_FALSE;
+	depth_stencil_info.depthCompareOp = VK_COMPARE_OP_LESS_OR_EQUAL;
 	depth_stencil_info.depthBoundsTestEnable = VK_FALSE;
 	depth_stencil_info.stencilTestEnable = VK_FALSE;	
 
@@ -289,7 +289,7 @@ bool build_graphics_pipeline(gpu_context_t& ctx, pipeline_description_t& desc, p
 	blend_attachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
 	blend_attachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 	blend_attachment.colorBlendOp = VK_BLEND_OP_ADD;
-	blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+	blend_attachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
 	blend_attachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
 	blend_attachment.alphaBlendOp = VK_BLEND_OP_ADD;
 	blend_attachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
@@ -309,6 +309,10 @@ bool build_graphics_pipeline(gpu_context_t& ctx, pipeline_description_t& desc, p
 	blend_info.blendConstants[3] = 0.0f;
 
 	// Skip Dynamic state
+    VkPipelineDynamicStateCreateInfo dynamic_info = {};
+    dynamic_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
+    dynamic_info.dynamicStateCount = static_cast<u32>(desc.dynamic_states.size());
+    dynamic_info.pDynamicStates = desc.dynamic_states.data();
     
     // create descriptor set layouts
 #ifdef REFLECT_DESCRIPTOR_SETS
@@ -354,7 +358,7 @@ bool build_graphics_pipeline(gpu_context_t& ctx, pipeline_description_t& desc, p
 	graphics_info.pMultisampleState = &ms_info;
 	graphics_info.pDepthStencilState = &depth_stencil_info;
 	graphics_info.pColorBlendState = &blend_info;
-	graphics_info.pDynamicState = nullptr;
+	graphics_info.pDynamicState = desc.dynamic_states.size() > 0 ? &dynamic_info : nullptr;
 	graphics_info.layout = pipeline.layout;
 	graphics_info.renderPass = desc.render_pass;
 	graphics_info.subpass = 0;

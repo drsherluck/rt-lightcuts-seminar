@@ -31,6 +31,9 @@ struct pipeline_description_t
 	VkRect2D              sciccor;
     VkRenderPass          render_pass;
     bool                  color_blending = false;
+    bool                  depth_test = true;
+    bool                  depth_write = true;
+    std::vector<VkDynamicState> dynamic_states;
     std::vector<descriptor_set_data_t> descriptor_sets;
 	std::vector<VkPushConstantRange>   push_constants;
     std::vector<VkVertexInputBindingDescription>   binding_descriptions;
