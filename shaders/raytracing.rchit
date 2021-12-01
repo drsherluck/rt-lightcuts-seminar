@@ -65,6 +65,8 @@ layout(set = 1, binding = 1) uniform scene_ubo
     scene_info_t scene;
 };
 
+
+// set 2 is all debuging and info buffers
 layout(std430, set = 2, binding = 0) readonly buffer vbo_info
 {
     query_output_t debug;
@@ -75,9 +77,14 @@ layout(std430, set = 2, binding = 1) writeonly buffer vbo_lines
     vec3 line_points[];
 };
 
-layout(std430, set = 2, binding = 2) writeonly buffer hl_nodes
+layout(std430, set = 2, binding = 2) buffer hl_nodes
 {
-    bool cut_nodes[];
+    int cut_nodes[];
+};
+
+layout(std430, set = 2, binding = 3) buffer sel_nodes
+{
+    int selected_leaf_nodes[]; // what was selected
 };
 
 layout(push_constant) uniform constants
@@ -187,7 +194,8 @@ void main()
                 line_points[idx + 1] = vec3(0);
             }
             uint id = get_array_index(light_cut[i].id, num_nodes);
-            cut_nodes[id] = true;
+            cut_nodes[id] = 1; // mark node/subtree as selected
+            selected_leaf_nodes[selection.id] = 1; // mark as leaf node selected
         }
         attenuation *= 1.0 / (distance * distance);
         vec3 px = light.color * attenuation * (diffuse + specular) * inv_prob;

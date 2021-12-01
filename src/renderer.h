@@ -37,6 +37,7 @@ struct frame_resource_t
     // here are bbox lines writen
     buffer_t vbo_lines;
     buffer_t sbo_nodes_highlight;
+    buffer_t sbo_leaf_select;
 
     // lines for visualizing sampling
     buffer_t vbo_ray_lines;
@@ -48,6 +49,7 @@ struct frame_resource_t
 
     VkCommandBuffer cmd;
     VkCommandBuffer cmd_prepass;
+    VkCommandBuffer cmd_dwn;
 };
 
 // config for what to render or to input into push_constants
@@ -68,6 +70,16 @@ struct render_state_t
     bool use_random_lights = false;
     i32  num_random_lights = 1;
     f32  distance_from_origin = 1;
+
+    // todo
+    bool paused = false;
+  
+    // debugging info passed on for imgui to use
+    struct {
+        i32 id;
+        i32 selected;
+    } cut[MAX_LIGHT_TREE_SIZE] = {};
+    i32 selected_leafs[MAX_LIGHTS] = {};
 };
 
 struct renderer_t
@@ -119,7 +131,7 @@ struct renderer_t
     renderer_t(window_t* _window);
     ~renderer_t();
 
-    void draw_scene(scene_t& scene, camera_t& camera, render_state_t state);
+    void draw_scene(scene_t& scene, camera_t& camera, render_state_t& state);
     void update_descriptors(scene_t& scene);
     void create_prepass_render_pass();
     void create_bbox_render_pass();

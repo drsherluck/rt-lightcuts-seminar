@@ -11,7 +11,7 @@
 
 #ifndef USE_GLFW
 
-#define NUM_KEYS 22
+#define NUM_KEYS 23
 #define KEY_W           0
 #define KEY_A           1
 #define KEY_S           2
@@ -34,6 +34,7 @@
 #define KEY_J           19
 #define KEY_K           20
 #define KEY_2           21
+#define KEY_X           22
 
 #define NUM_BUTTONS 2
 #define MOUSE_BUTTON_1 0
@@ -65,6 +66,7 @@
 #define KEY_J           GLFW_KEY_J
 #define KEY_K           GLFW_KEY_K
 #define KEY_2           GLFW_KEY_2
+#define KEY_X           GLFW_KEY_X
 
 #define NUM_BUTTONS GLFW_MOUSE_BUTTON_8 + 1
 #define MOUSE_BUTTON_1 GLFW_MOUSE_BUTTON_1

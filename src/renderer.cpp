@@ -12,7 +12,7 @@
 #define ENABLE_SORT_LIGHTS 1
 #define ENABLE_LIGHT_TREE 1
 #define ENABLE_RTX 1
-#define ENABLE_VERIFY 0
+#define ENABLE_VERIFY 1
 
 #define MAX_DESCRIPTOR_SETS 50
 
@@ -287,11 +287,12 @@ renderer_t::renderer_t(window_t* _window) : window(_window)
     add_binding(layout_set6, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
     add_binding(layout_set6, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_COMPUTE_BIT);
     build_descriptor_set_layout(context.device, layout_set6);
-    // set 7 (vbo lines)
+    // set 7 (debugging info)
     auto& layout_set7 = set_layouts[7];
     add_binding(layout_set7, 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
     add_binding(layout_set7, 1, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR);
     add_binding(layout_set7, 2, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR); // indices of nodes in tree that highlight
+    add_binding(layout_set7, 3, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR); // selected leaf nodes
     build_descriptor_set_layout(context.device, layout_set7);
     // set 8 flags for highlight bbox nodes
     auto& layout_set8 = set_layouts[8];
@@ -578,12 +579,15 @@ void renderer_t::update_descriptors(scene_t& scene)
         // buffer for sample ray lines
         create_buffer(context, MAX_LIGHTS_SAMPLED * sizeof(v4) * 2, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, &frame_resources[i].vbo_ray_lines);
         VkDescriptorBufferInfo ray_lines_vbo_info = { frame_resources[i].vbo_ray_lines.handle, 0, VK_WHOLE_SIZE };
-        create_buffer(context, MAX_LIGHT_TREE_SIZE * sizeof(i32), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, &frame_resources[i].sbo_nodes_highlight);
+        create_buffer(context, MAX_LIGHT_TREE_SIZE * sizeof(i32), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &frame_resources[i].sbo_nodes_highlight);
         VkDescriptorBufferInfo nodes_highlight_info = { frame_resources[i].sbo_nodes_highlight.handle, 0, VK_WHOLE_SIZE };
+        create_buffer(context, MAX_LIGHTS * sizeof(i32), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &frame_resources[i].sbo_leaf_select);
+        VkDescriptorBufferInfo selected_leafs_info = { frame_resources[i].sbo_leaf_select.handle, 0, VK_WHOLE_SIZE };
         descriptor_set_t set8(set_layouts[7]);
         bind_buffer(set8, 0, &ray_lines_info_info);
         bind_buffer(set8, 1, &ray_lines_vbo_info);
         bind_buffer(set8, 2, &nodes_highlight_info);
+        bind_buffer(set8, 3, &selected_leafs_info);
         frame_resources[i].descriptor_sets.push_back(build_descriptor_set(descriptor_allocator, set8));
        
         // fragment shader for lines pipeline
@@ -644,6 +648,7 @@ void renderer_t::update_descriptors(scene_t& scene)
 
         VK_CHECK( vkAllocateCommandBuffers(context.device, &alloc, &frame_resources[i].cmd) );
         VK_CHECK( vkAllocateCommandBuffers(context.device, &alloc, &frame_resources[i].cmd_prepass) );
+        VK_CHECK( vkAllocateCommandBuffers(context.device, &alloc, &frame_resources[i].cmd_dwn) );
     }
     end_upload(staging); // uploaded to transfer
     end_and_submit_command_buffer(cmd, context.q_compute);
@@ -687,7 +692,7 @@ renderer_t::~renderer_t()
     destroy_context(context);
 }
 
-void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t state)
+void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t& state)
 {
     static bool mat_uploaded[2] = {false, false};
     VkResult res;
@@ -773,6 +778,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
             copy_to_buffer(staging, frame_resources[frame_index].vbo_ray_lines, MAX_LIGHTS_SAMPLED * 2 * sizeof(v4), empty_buffer, 0);
             copy_to_buffer(staging, frame_resources[frame_index].vbo_lines, MAX_LIGHTS * 24 * sizeof(v4), empty_buffer, 0);
             copy_to_buffer(staging, frame_resources[frame_index].sbo_nodes_highlight, MAX_LIGHT_TREE_SIZE * sizeof(i32), empty_buffer, 0);
+            copy_to_buffer(staging, frame_resources[frame_index].sbo_leaf_select, MAX_LIGHTS * sizeof(i32), empty_buffer, 0);
         }
 
         VkSemaphore upload_complete;
@@ -938,8 +944,8 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
                 constants.start_src_id = (1 << (h + 1)) - (1 << (h - src_lvl + 1));
                 constants.start_id     = ((1 << (h - src_lvl + 1)) - 1) - (1 << (h - src_lvl)) - constants.total_nodes;
                 constants.src_level    = h - src_lvl;
-    
-               // LOG_INFO("level %d to %d, nodes = %d", h - src_lvl, h - dst_lvl, constants.total_nodes);
+                //LOG_INFO("level %d to %d, nodes = %d, start_srd_id=%d, src_level=%d", h - src_lvl, h - dst_lvl, 
+                //            constants.total_nodes, constants.start_src_id, constants.src_level);
                 
                 // wait for previous level to finish
                 VkMemoryBarrier barrier = {};
@@ -1076,56 +1082,86 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
 
         VK_CHECK( vkQueueSubmit(context.q_compute, 1, &submit_info, frame_resources[frame_index].rt_fence) );
 
-        if (ENABLE_VERIFY) 
+        if (ENABLE_VERIFY)
         {
-            LOG_INFO("COMPUTE TIME %lf", get_results(profiler));
+            //LOG_INFO("COMPUTE TIME %lf", get_results(profiler));
             // compute to local
-            cmd = frame_resources[frame_index].cmd;
+            cmd = frame_resources[frame_index].cmd_dwn;
             VK_CHECK( begin_command_buffer(cmd) ); 
-            buffer_t local;
             u32 h = static_cast<u32>(log2(num_leaf_nodes));
             u32 node_count = ((1 << (h + 1)) - 1);
-            u32 size = sizeof(node_t) * node_count;
+
+            u32 size_light_tree = sizeof(node_t) * node_count;
+            u32 size_selected_nodes = sizeof(i32) * node_count;
+            u32 size_selected_leafs = sizeof(i32) * num_leaf_nodes;
+            u32 size = size_light_tree + size_selected_nodes + size_selected_leafs;
+
+            buffer_t local;
             create_buffer(context, size, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT, &local,
                 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
             
-            VkBufferCopy copy{};
-            copy.srcOffset = 0;
-            copy.dstOffset = 0;
-            copy.size = size;
-           
-            vkCmdCopyBuffer(cmd, frame_resources[frame_index].sbo_light_tree.handle, local.handle, 1, &copy);
+            VkBufferCopy copy_tree = {};
+            copy_tree.size = size_light_tree;
+            vkCmdCopyBuffer(cmd, frame_resources[frame_index].sbo_light_tree.handle, local.handle, 1, &copy_tree);
+
+            VkBufferCopy copy_nodes = {};
+            copy_nodes.dstOffset = size_light_tree;
+            copy_nodes.size = size_selected_nodes;
+            vkCmdCopyBuffer(cmd, frame_resources[frame_index].sbo_nodes_highlight.handle, local.handle, 1, &copy_nodes);
+            
+            VkBufferCopy copy_leafs = {};
+            copy_leafs.dstOffset = size_light_tree + size_selected_nodes;
+            copy_leafs.size = size_selected_leafs;
+            vkCmdCopyBuffer(cmd, frame_resources[frame_index].sbo_leaf_select.handle, local.handle, 1, &copy_leafs);
+
             VK_CHECK( vkEndCommandBuffer(cmd) );
 
             VkPipelineStageFlags _dst_wait_mask = VK_PIPELINE_STAGE_TRANSFER_BIT;
             submit_info.waitSemaphoreCount = 1;
             submit_info.pWaitSemaphores = &frame_resources[frame_index].rt_semaphore;
             submit_info.pWaitDstStageMask = &_dst_wait_mask;
-            submit_info.signalSemaphoreCount = 1;
+            submit_info.signalSemaphoreCount = 0;
             submit_info.pSignalSemaphores = &frame->render_semaphore;
             submit_info.pCommandBuffers = &cmd;
-
-            VK_CHECK( vkQueueSubmit(context.q_transfer, 1, &submit_info, frame->fence) ); 
+            VK_CHECK( vkQueueSubmit(context.q_transfer, 1, &submit_info, nullptr) ); 
             VK_CHECK( wait_for_queue(context.q_transfer) );
 
             u8* p_data;
             context.allocator.map_memory(local.allocation, (void**)&p_data);
-            auto* ptr = reinterpret_cast<node_t*>(p_data);
-#if 1
-            for (size_t i = 0; i < node_count; i++)
+
+            // write node ids
             {
-               LOG_INFO("node: id %d, I %f", ptr[i].id, ptr[i].intensity);
+                auto* ptr = reinterpret_cast<node_t*>(p_data);
+                for (size_t i = 0; i < node_count; i++)
+                {
+                    state.cut[i].id = ptr[i].id;
+                }
+                /*f32 root_intensity = 0.0f;
+                for (i32 i = 0; i < num_leaf_nodes; ++i)
+                {
+                    root_intensity += ptr[i].intensity;
+                }
+                assert(ptr[node_count - 1].intensity >= root_intensity - 1.0f || 
+                        ptr[node_count - 1].intensity <= root_intensity + 1.0f);*/
             }
-#endif
-            f32 root_intensity = 0.0f;
-            for (i32 i = 0; i < num_leaf_nodes; ++i)
+
+            // write selected nodes
+            { 
+                auto* ptr = reinterpret_cast<i32*>(p_data + size_light_tree);
+                for (i32 i = 0; i < node_count; i++)
+                {
+                    state.cut[i].selected = ptr[i];
+                }
+            }
+
+            // write selected leafs
             {
-                root_intensity += ptr[i].intensity;
+                auto* ptr = reinterpret_cast<i32*>(p_data + size_light_tree + size_selected_nodes);
+                memcpy(&state.selected_leafs, ptr, size_selected_leafs);
             }
-            assert(ptr[node_count - 1].intensity >= root_intensity - 1.0f || 
-                    ptr[node_count - 1].intensity <= root_intensity + 1.0f);
+
             context.allocator.unmap_memory(local.allocation);
-            abort();
+            destroy_buffer(context, local);
         }
 
         cmd = frame_resources[frame_index].cmd;
@@ -1214,9 +1250,6 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
 
         vkCmdEndRenderPass(cmd);
 
-        //VkClearValue clear[2];
-        //clear[0].color = {0, 0, 0, 0};
-        //clear[1].depthStencil = {1, 0};
         begin_render_pass(context, cmd, clear, 2); 
         if (!state.render_depth_buffer)
         {
@@ -1246,9 +1279,9 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t sta
 
         VkPipelineStageFlags _dst_wait_mask[2] = { VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT };
         VkSemaphore wait_semaphores[2] = {frame_resources[frame_index].rt_semaphore, frame_resources[frame_index].prepass_semaphore};
-        submit_info.waitSemaphoreCount = 2;
-        submit_info.pWaitSemaphores = wait_semaphores;
-        submit_info.pWaitDstStageMask = _dst_wait_mask;
+        submit_info.waitSemaphoreCount = 1;
+        submit_info.pWaitSemaphores = &wait_semaphores[1];
+        submit_info.pWaitDstStageMask = &_dst_wait_mask[1];
         submit_info.signalSemaphoreCount = 1;
         submit_info.pSignalSemaphores = &frame->render_semaphore;
         submit_info.pCommandBuffers = &cmd;
