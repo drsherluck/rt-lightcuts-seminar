@@ -1,5 +1,6 @@
 # Implementation of Real-Time Stochastic Lightcuts
-This is for the course Seminar Computer Graphics at the TU Delft, where we have to present a paper and create a small implementation that helps understand the paper.
+This is for the course Seminar Computer Graphics at the TU Delft, where we have to present a paper and create a small implementation that helps understand the paper.<br>
+The paper implemented (partialy): <a href="https://dl.acm.org/doi/10.1145/3384543">Real-Time Stochastic Lightcuts</a> (2020) by Daqi Lin and Cem Yuksel 
 
 ## Dependencies
 * <a href="https://github.com/glfw/glfw">GLFW</a>
