@@ -56,6 +56,7 @@ struct frame_resource_t
 // that can be changed at runtime
 struct render_state_t
 {
+    i32  cut_size = 1;
     i32  num_samples = 1;
     bool render_depth_buffer = false;
     bool render_sample_lines = false; 

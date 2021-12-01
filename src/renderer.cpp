@@ -1049,6 +1049,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t& st
                 i32 num_leaf_nodes;
                 f32 time;
                 u32 num_samples;
+                u32 cut_size;
                 i32 is_ortho; // boolean
             } constants;
             
@@ -1058,6 +1059,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t& st
             constants.num_nodes = ((1 << (h + 1)) - 1);
             constants.num_leaf_nodes = num_leaf_nodes;
             constants.num_samples = state.num_samples;
+            constants.cut_size = state.cut_size;
             constants.time = (float)tp.tv_nsec;
             constants.is_ortho = static_cast<i32>(camera.is_ortho);
             vkCmdPushConstants(cmd, rtx_pipeline.layout, VK_SHADER_STAGE_RAYGEN_BIT_KHR | VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, 0, sizeof(constants), &constants);

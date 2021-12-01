@@ -93,6 +93,7 @@ layout(push_constant) uniform constants
     int num_leaf_nodes;
     float time;
     uint num_samples;
+    uint user_cut_size;
     bool is_ortho; // 4 bytes
 };
 
@@ -101,6 +102,7 @@ struct payload_t
     int sample_id;
     float seed;
     vec4 color;
+    bool hit;
 };
 layout(location = 0) rayPayloadInEXT payload_t payload;
 layout(location = 1) rayPayloadEXT bool is_shadow;
@@ -131,7 +133,7 @@ void main()
     uint cut_size;
     light_cut_t light_cut[MAX_CUT_SIZE];
     selected_light_t selected_lights[MAX_CUT_SIZE];
-    gen_light_cut(world_position, world_normal, light_cut, num_nodes, num_leaf_nodes, cut_size, num_samples);
+    gen_light_cut(world_position, world_normal, light_cut, num_nodes, num_leaf_nodes, cut_size, user_cut_size);
     float r = random(vec4(gl_LaunchIDEXT.xy, payload.seed, time));
     select_lights(world_position, world_normal, cut_size, light_cut, selected_lights, num_nodes, num_leaf_nodes, r);
 

@@ -56,7 +56,8 @@ bool new_frame(imgui_t& imgui, render_state_t* state, scene_t* scene, frame_time
     ImGui::Checkbox("Only render selected bbox nodes",  &state->render_only_selected_nodes);
     if (!state->render_bboxes) 
         ImGui::EndDisabled();
-    ImGui::SliderInt("Cut size", &state->num_samples, 1, MIN(static_cast<i32>(scene->lights.size()), 32));
+    ImGui::SliderInt("Samples ppx", &state->num_samples, 1, 16);
+    ImGui::SliderInt("Cut size", &state->cut_size, 1, MIN(static_cast<i32>(scene->lights.size()), 32));
     ImGui::Checkbox("Random lights", &state->use_random_lights);
     if (state->use_random_lights)
     {
