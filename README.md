@@ -19,3 +19,5 @@ make
 make shaders
 ./engine
 ```
+
+Note: only tested on Linux, may not work on Windows
