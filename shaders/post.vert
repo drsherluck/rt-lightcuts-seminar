@@ -1,17 +1,9 @@
 #version 460
 
-layout(location = 0) out vec2 texcoord;
-
-vec2 positions[4] = vec2[](
-    vec2(-1, -1),
-    vec2(-1,  1),
-    vec2( 1, -1),
-    vec2( 1,  1)
-);
+layout(location = 0) out vec2 uv;
 
 void main() 
 {
-    vec2 pos = positions[gl_VertexIndex];
-    gl_Position = vec4(pos, 0, 1);
-	texcoord = vec2(pos.x * 0.5 + 0.5, pos.y * 0.5 + 0.5);
+	uv = vec2(gl_VertexIndex & 2, (gl_VertexIndex << 1) & 2);
+    gl_Position = vec4(uv * 2.0f - 1.0f, 0, 1);
 }

@@ -6,7 +6,7 @@ static constexpr v3 world_up = {0,1,0};
 
 camera_t::camera_t()
 {
-    set_fov(radians(90.0f), 1.0f);
+    set_perspective(radians(90.0f), 1.0f);
     position = vec3(0);
     pitch    = 0;
     yaw      = RADIANS_90DEG;
@@ -14,7 +14,7 @@ camera_t::camera_t()
 
 camera_t::camera_t(v3 pos, v3 look_at)
 {
-    set_fov(radians(90.0f), 1.0f);
+    set_perspective(radians(90.0f), 1.0f);
     position = pos;
     lookat(look_at);
 }
@@ -26,14 +26,24 @@ void camera_t::lookat(v3 pos)
     pitch  = atan2f(dir.y, sqrtf(dir.z*dir.z + dir.x*dir.x));
 }
 
-void camera_t::set_fov(f32 fov, f32 aspect)
+void camera_t::set_perspective(f32 fov, f32 aspect)
 {
+    is_ortho = false;
     this->fov = fov;
-    m_proj = perspective(fov, aspect, 0.1f, 5.0f);
+    m_proj = perspective(fov, aspect, znear, zfar);
+}
+
+void camera_t::set_orthographic(f32 width, f32 aspect)
+{
+    is_ortho = true;
+    f32 u = width;
+    f32 v = width * aspect;
+    m_proj = orthographic(-u, u, -v, v, znear, zfar);
 }
 
 void camera_t::update(f32 dt, window_t& window)
 {
+    if (is_frozen) return;
     v2 offset = get_mouse_move_direction(window) * sensitivity;
     // looking around
     if (is_button_down(window, MOUSE_BUTTON_1) 

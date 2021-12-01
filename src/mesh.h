@@ -7,15 +7,6 @@
 #include <string>
 #include <vector>
 
-struct material_t
-{
-    v3  base_color;
-    f32 roughness;
-    f32 metalness;
-    f32 emissive;
-    f32 _p0[2];
-};
-
 struct vertex_t
 {
 	v3 position;

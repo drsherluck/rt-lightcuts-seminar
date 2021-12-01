@@ -130,6 +130,9 @@ union quat
 
 // section utility
 
+#define MAX(a, b) (a > b ? a : b)
+#define MIN(a, b) (a < b ? a : b)
+
 inline i32 mod(i32 k, i32 n)
 {
 	return (k %= n) < 0 ? k + n : k;
@@ -151,8 +154,19 @@ inline f32 clamp(f32 value, f32 min_value, f32 max_value)
         return min_value;
     }
     return value;
-    //return fmin(max_value, fmax(min_value, value));
 }
+
+inline u32 next_pow2(u32 v)
+{
+    v--;
+    v |= v >> 1;
+    v |= v >> 2;
+    v |= v >> 4;
+    v |= v >> 8;
+    v |= v >> 16;
+    v++;
+    return v;
+};
 
 // section: v2 
 
@@ -208,6 +222,12 @@ inline void operator*=(v2& v, f32 s)
     v.y *= s;
 }
 
+inline void operator*=(v2& v0, v2 v1)
+{
+    v0.x *= v1.x;
+    v0.y *= v1.y;
+}
+
 inline void operator/=(v2& v, f32 s)
 {
     v *= (1.0f/s);
@@ -237,6 +257,12 @@ inline v2 operator*(v2 v, f32 s)
     return res;
 }
 
+inline v2 operator*(v2 v0, v2 v1)
+{
+    v2 res = {v0.x*v1.x, v0.y*v1.y};
+    return res;
+}
+
 inline v2 operator/(v2 v, f32 s)
 {
     f32 f = (1.0f/s);
@@ -252,6 +278,13 @@ inline bool operator==(const v2& l, const v2& r)
 inline bool operator!=(const v2& l, const v2& r)
 {
     return !(l == r);
+}
+
+inline v2 floor(v2 v)
+{
+    v.x = floor(v.x);
+    v.y = floor(v.y);
+    return v;
 }
 
 // section: v3
@@ -409,6 +442,24 @@ inline v3 cross(const v3& l, const v3& r)
     res[0] = l.y * r.z - l.z * r.y;
     res[1] = l.z * r.x - l.x * r.z;
     res[2] = l.x * r.y - l.y * r.x;
+    return res;
+}
+
+inline v3 min(const v3& l, const v3& r)
+{
+    v3 res;
+    res[0] = MIN(l.x, r.x);
+    res[1] = MIN(l.y, r.y);
+    res[2] = MIN(l.z, r.z);
+    return res;
+}
+
+inline v3 max(const v3& l, const v3& r)
+{
+    v3 res;
+    res[0] = MAX(l.x, r.x);
+    res[1] = MAX(l.y, r.y);
+    res[2] = MAX(l.z, r.z);
     return res;
 }
 
@@ -1015,6 +1066,16 @@ inline m4x4 perspective(f32 fov, u32 width, u32 height, f32 near, f32 far)
 {
     f32 aspect = (f32)height/(f32)width;
     return perspective(fov, aspect, near, far);
+}
+
+inline m4x4 orthographic(f32 left, f32 right, f32 top, f32 bottom, f32 near, f32 far)
+{
+    m4x4 res;
+    res[0] = {2.0f/(right - left), 0, 0, 0}; 
+    res[1] = {0, 2.0f/(top - bottom), 0, 0};
+    res[2] = {0, 0, -1.0f/(far - near), 0};
+    res[3] = {-(left + right)/(right - left), -(bottom + top)/(top-bottom), -near/(far - near), 1 };
+    return res;
 }
 
 inline m4x4 view_matrix(v3 position, v3 forward, v3 up, v3 right)

@@ -7,17 +7,26 @@
 #include <vector>
 #include <string>
 
+#ifndef USE_GLFW
+// todo add conditional for different platforms
 #define VK_USE_PLATFORM_XCB_KHR
 #include <vulkan/vulkan.h>
-
 #include <xcb/xcb.h>
+#else
+#include <vulkan/vulkan.h>
+#include <GLFW/glfw3.h>
+#endif
 
 struct window_t
 {
+#ifndef USE_GLFW
 	xcb_connection_t  *con;
 	xcb_screen_t      *screen;
 	xcb_window_t      window;
 	xcb_atom_t        wm_delete_atom;
+#else
+    GLFWwindow*       window;
+#endif 
 	bool              running;
 	u16               width;
 	u16               height;
@@ -26,8 +35,10 @@ struct window_t
 	window_t();
 	~window_t();
 
+#ifndef USE_GLFW
 	void setup_delete_protocol();
 	void handle_event(xcb_generic_event_t *event);
+#endif
 
 	void create_window(std::string name, u16 width, u16 height); 
 	void set_title(std::string name);

@@ -339,6 +339,7 @@ void init_context(gpu_context_t& ctx, window_t* window)
     features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
     features.pNext = &buffer_address_features;
     features.features.shaderInt64 = VK_TRUE;
+    features.features.fillModeNonSolid = VK_TRUE;
 	//features.samplerAnisotropy = VK_TRUE;
     
 	// logical device 
@@ -358,7 +359,7 @@ void init_context(gpu_context_t& ctx, window_t* window)
     load_extension_functions(ctx.device);
 	
 	// init allocator
-	ctx.allocator.init_allocator(ctx.device, ctx.physical_device);
+	ctx.allocator.init_allocator(ctx.device, ctx.physical_device, ctx.instance);
 	LOG_INFO("Gpu memory allocator initialized");
 
 	// create queues
@@ -485,7 +486,7 @@ void create_swapchain(gpu_context_t& ctx, window_t* window)
 	info.imageColorSpace = selected_format.colorSpace;
 	info.imageExtent = extent;
 	info.imageArrayLayers = 1;
-	info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT; // Set here VK_IMAGE_USAGE_STORAGE_BIT
+	info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT; // Set here VK_IMAGE_USAGE_STORAGE_BIT
 	info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	info.preTransform = capabilities.currentTransform;
 	info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -799,13 +800,19 @@ VkCommandBuffer begin_one_time_command_buffer(gpu_context_t& ctx, VkCommandPool 
     return cmd;
 }
 
-void end_and_submit_command_buffer(VkCommandBuffer cmd, VkQueue queue)
+void end_and_submit_command_buffer(VkCommandBuffer cmd, VkQueue queue, VkSemaphore* wait_semaphore, VkPipelineStageFlags wait_stage)
 {
 	VK_CHECK( vkEndCommandBuffer(cmd) );
 
 	VkSubmitInfo submit_info{};
 	submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
 	submit_info.pNext = nullptr;
+    if (wait_semaphore)
+    {
+        submit_info.waitSemaphoreCount = 1;
+        submit_info.pWaitSemaphores = wait_semaphore;
+        submit_info.pWaitDstStageMask = &wait_stage;
+    }
 	submit_info.commandBufferCount = 1;
 	submit_info.pCommandBuffers = &cmd;
 

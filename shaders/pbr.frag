@@ -1,48 +1,26 @@
 #version 460
+#extension GL_GOOGLE_include_directive : enable
 
-struct material
-{
-    vec3  base_color;
-    float roughness;
-    float metalness;
-    float emissive;
-};
-
-struct light_t
-{
-    vec3 position;
-    vec3 color;
-};
-
-struct mesh_data
-{
-    int material_index;
-    uint index_offset;
-    uint vertex_offset;
-};
+#define GLSL
+#include "../src/shader_data.h"
+#include "common.inc"
+#include "brdf.inc"
 
 layout(std140, set = 0, binding = 0) uniform camera_ubo
 {
-    vec3 pos;
-    mat4 view;
-    mat4 proj;
-    mat4 inv_view;
-    mat4 inv_proj;
-} camera;
-
-layout(std140, set = 0, binding = 1) readonly buffer lights_sbo
+    camera_ubo_t camera;
+};
+layout(std430, set = 0, binding = 1) readonly buffer lights_sbo
 {
     light_t lights[];
 };
-
-layout(std140, set = 0, binding = 3) readonly buffer material_sbo 
+layout(std430, set = 0, binding = 3) readonly buffer material_sbo 
 {
-    material materials[];
+    material_t materials[];
 };
-
-layout(std140, set = 0, binding = 4) readonly buffer mesh_sbo
+layout(std430, set = 0, binding = 4) readonly buffer mesh_sbo
 {
-    mesh_data meshes[];
+    mesh_info_t meshes[];
 };
 
 layout(location = 0) in VS_IN 
@@ -56,27 +34,6 @@ layout(location = 0) in VS_IN
 
 layout(location = 0) out vec4 out_color;
 
-const float PI = 3.1415926535;
-
-vec3 f_schlick(vec3 f0, float u)
-{
-    return f0 + (vec3(1.0f) - f0) * pow(1.0f - u, 5.0f);
-}
-
-float d_ggx(in float a2, float NdotH)
-{
-    float d = PI*pow((a2 - 1.0f) * (NdotH * NdotH) + 1.0f, 2.0f);
-    return a2/(d + 1e-5f);
-}
-
-float g_smith(float alpha, float NdotV, float NdotL)
-{
-    float k = alpha/2;
-    float g1 = NdotL/(NdotL*(1.0f - k) + k);
-    float g2 = NdotV/(NdotV*(1.0f - k) + k);
-    return g1 * g2;
-}
-
 void main()
 {
     vec3 N = normal;
@@ -86,7 +43,7 @@ void main()
     for (int i = 0; i < light_count; ++i)
     {
         light_t light = lights[i];
-        vec3 L = normalize(light.position - world_pos);
+        vec3 L = normalize(light.pos - world_pos);
         vec3 H = normalize(L + V);
         float HdotV = clamp(dot(H, V), 0.0, 1.0);
         float NdotH = clamp(dot(N, H), 0.0, 1.0);
@@ -94,7 +51,7 @@ void main()
         float HdotL = clamp(dot(H, L), 0.0, 1.0);
         float NdotL = clamp(dot(N, L), 0.0, 1.0);
 
-        mesh_data mesh = meshes[mesh_index];
+        mesh_info_t mesh = meshes[mesh_index];
         if (mesh.material_index == -1)
         {
             vec3 kd = vec3(1.0);
@@ -103,14 +60,14 @@ void main()
             vec3 specular = ks * pow(NdotH, 5.0);
 
             // attenuation
-            float dis = length(light.position - world_pos);
+            float dis = length(light.pos - world_pos);
             vec3 L_color = light.color * 10.0/ (dis*dis);
 
             out_color.xyz += L_color * (diffuse + specular);
             continue;
         }
 
-        material mat = materials[mesh.material_index];
+        material_t mat = materials[mesh.material_index];
         vec3 F0 = mix(vec3(0.04), mat.base_color, mat.metalness);
         vec3 r_diffuse = mat.base_color * (1.0 - mat.metalness);
         float a  = mat.roughness * mat.roughness;
@@ -126,7 +83,7 @@ void main()
         vec3 lambert = r_diffuse / PI;
 
         // attenuation
-        float dis = length(light.position - world_pos);
+        float dis = length(light.pos - world_pos);
         vec3 L_color = light.color * 10.0/ (dis*dis);
 
         vec3 brdf = max((vec3(1.0) - F) * lambert + cook_torrance, vec3(0));

@@ -13,7 +13,7 @@
 
 #define ONE_SECOND_IN_NANOSECONDS 1000000000
 
-#define VK_DEBUG_CHECKPOINT_NV
+//#define VK_DEBUG_CHECKPOINT_NV
 #define VK_RTX_ON
 
 struct window_t;
@@ -128,7 +128,7 @@ void create_render_pass(gpu_context_t& ctx, VkRenderPass* render_pass);
 VkResult create_descriptor_set_layout(gpu_context_t& ctx, u32 bind_count, VkDescriptorSetLayoutBinding *p_bindings, VkDescriptorSetLayout* layout);
 bool create_texture(gpu_context_t& ctx, u32 width, u32 height, texture_t* p_texture);
 bool create_image(gpu_context_t& ctx, VkImageType type, VkFormat format, u32 width, u32 height, VkImageUsageFlagBits usage, VkImageAspectFlags aspect_mask, image_t* p_image);
-void destroy_image(gpu_context_t& ctx, image_t* image);
+void destroy_image(gpu_context_t& ctx, image_t& image);
 bool create_sampler(gpu_context_t& ctx, VkFilter filter, VkSamplerAddressMode address_mode, VkSampler* p_sampler);
 
 bool create_buffer(gpu_context_t& ctx, u32 size, u32 usage, buffer_t* p_buffer, 
@@ -138,7 +138,8 @@ void destroy_buffer(gpu_context_t& ctx, buffer_t& buffer);
 VkDeviceAddress get_buffer_device_address(gpu_context_t& ctx, VkBuffer buffer);
 
 VkCommandBuffer begin_one_time_command_buffer(gpu_context_t& ctx, VkCommandPool pool);
-void end_and_submit_command_buffer(VkCommandBuffer cmd, VkQueue queue);
+void end_and_submit_command_buffer(VkCommandBuffer cmd, VkQueue queue, VkSemaphore* wait_semaphore = nullptr, 
+        VkPipelineStageFlags wait_stage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT);
 
 VkResult begin_command_buffer(VkCommandBuffer cmd);
 void begin_render_pass(gpu_context_t& ctx, VkCommandBuffer cmd, VkClearValue *clear, u32 clear_count); 
@@ -151,5 +152,6 @@ void present_frame(gpu_context_t& ctx, frame_t* frame);
 void on_window_resize(gpu_context_t& ctx, window_t& window);
 inline void wait_idle(gpu_context_t& ctx) { vkDeviceWaitIdle(ctx.device); }
 inline VkResult wait_for_queue(VkQueue queue) { return vkQueueWaitIdle(queue); }
+inline VkImage get_swapchain_image(gpu_context_t& ctx) { return ctx.swapchain.images[ctx.swapchain.image_index]; };
 
 #endif // BACKEND_H

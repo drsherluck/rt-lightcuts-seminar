@@ -1,0 +1,61 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+
+#define GLSL
+#include "../src/shader_data.h"
+#include "common.inc"
+
+layout(std430, set = 0, binding = 0) readonly buffer lights_buffer
+{
+    light_t lights[];
+};
+
+layout(std430, set = 0, binding = 1) readonly buffer encoded_buffer
+{
+    encoded_t encoded_lights[];
+};
+
+layout(std430, set = 0, binding = 2) writeonly buffer tree_buffer
+{
+    node_t nodes[];
+};
+
+layout(push_constant) uniform constants
+{
+    uint total_nodes; 
+};
+
+layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+    uint id = gl_GlobalInvocationID.x;
+    if (id < total_nodes)
+    {
+        uint idx = encoded_lights[id].id;
+
+        node_t node;
+        node.id = idx;
+        if (idx != INVALID_ID) // invalid index (dummy node)
+        {
+            light_t light = lights[idx]; 
+            node.intensity = light.color.x + light.color.y + light.color.z;
+            if (node.intensity > 0)
+            {
+                node.bbox_min = light.pos;
+                node.bbox_max = light.pos;
+            }
+            else 
+            {
+                node.bbox_min = vec3(FLT_MIN);
+                node.bbox_max = vec3(FLT_MAX);
+            }
+        }
+        else
+        {
+            node.intensity = 0.0;
+            node.bbox_min  = vec3(FLT_MIN);
+            node.bbox_max  = vec3(FLT_MAX);
+        }
+        nodes[id] = node;
+    }
+}

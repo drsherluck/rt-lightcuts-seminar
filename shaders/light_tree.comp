@@ -1,0 +1,60 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+
+#define GLSL
+#include "../src/shader_data.h"
+#include "common.inc"
+
+layout(std430, set = 0, binding = 0) readonly buffer lights_buffer
+{
+    light_t lights[];
+};
+
+layout(std430, set = 0, binding = 1) readonly buffer encoded_buffer
+{
+    encoded_t encoded_lights[];
+};
+
+layout(std430, set = 0, binding = 2) buffer tree_buffer
+{
+    node_t nodes[];
+};
+
+layout(push_constant) uniform constants
+{
+    uint height;       // 2^h = number of leaf nodes
+    uint total_nodes;  // #nodes being processed by dispatch
+    uint start_id;     // offset for calculating id (where root = 0) and level
+    uint src_level;    // the level we are merging our nodes from
+    uint src_start_id; // the start id (in terms of nodes array index) of the src level
+};
+
+layout(local_size_x = 512, local_size_y = 1, local_size_z = 1) in;
+void main()
+{
+    if (gl_GlobalInvocationID.x < total_nodes)
+    {
+        uint id = gl_GlobalInvocationID.x + start_id;
+        uint level    = get_msb(id + 1);
+        uint level_id = id - ((1 << level) - 1); // [0, number of nodes in level)
+        uint idx      = level_id + (1 << (height + 1)) - (1 << (level + 1)); 
+   
+        uint merge_count    = (1 << (src_level - level));
+        uint merge_start_id = src_start_id + level_id * merge_count;
+        uint merge_end_id   = merge_start_id + merge_count;
+
+        node_t node = nodes[merge_start_id];
+        node.id = idx; 
+        for(uint i = merge_start_id + 1; i < merge_end_id; i++)
+        {
+            node_t n = nodes[i];
+            if (n.intensity > 0)
+            {
+                node.intensity += n.intensity;
+                node.bbox_min = min(node.bbox_min, n.bbox_min);
+                node.bbox_max = max(node.bbox_max, n.bbox_max);
+            }
+        }
+        nodes[idx] = node;
+    }
+}

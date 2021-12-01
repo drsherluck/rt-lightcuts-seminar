@@ -31,6 +31,9 @@ struct pipeline_description_t
 	VkRect2D              sciccor;
     VkRenderPass          render_pass;
     bool                  color_blending = false;
+    bool                  depth_test = true;
+    bool                  depth_write = true;
+    std::vector<VkDynamicState> dynamic_states;
     std::vector<descriptor_set_data_t> descriptor_sets;
 	std::vector<VkPushConstantRange>   push_constants;
     std::vector<VkVertexInputBindingDescription>   binding_descriptions;
@@ -83,6 +86,13 @@ struct shader_binding_table_t
     VkStridedDeviceAddressRegionKHR call;
 };
 
+struct compute_pipeline_description_t 
+{
+    shader_t shader;
+    std::vector<VkDescriptorSetLayout> descriptor_set_layouts;
+    std::vector<VkPushConstantRange> push_constants;
+};
+
 struct gpu_context_t;
 
 void init_graphics_pipeline_description(gpu_context_t& ctx, pipeline_description_t& description);
@@ -92,6 +102,9 @@ bool build_graphics_pipeline(gpu_context_t& ctx, pipeline_description_t& descrip
 bool build_raytracing_pipeline(gpu_context_t& ctx, rt_pipeline_description_t& description, pipeline_t* pipeline);
 bool build_shader_binding_table(gpu_context_t& ctx, rt_pipeline_description_t& description, pipeline_t& pipeline, shader_binding_table_t& sbt);
 void add_shader(rt_pipeline_description_t& description, VkShaderStageFlagBits stage, std::string entry, const char* path);
+
+bool build_compute_pipeline(gpu_context_t& ctx, compute_pipeline_description_t&, pipeline_t* pipeline);
+void add_shader(compute_pipeline_description_t& description, std::string entry, const char* path);
 
 void destroy_pipeline(gpu_context_t& ctx, pipeline_t* pipeline);
 #endif

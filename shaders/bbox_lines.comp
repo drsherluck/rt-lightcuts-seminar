@@ -1,0 +1,75 @@
+#version 460
+#extension GL_GOOGLE_include_directive : enable
+
+#define GLSL
+#include "../src/shader_data.h"
+#include "common.inc"
+
+layout(std430, set = 0, binding = 0) readonly buffer tree_buffer 
+{
+    node_t nodes[];
+};
+
+layout(std430, set = 0, binding = 1) writeonly buffer lines
+{
+    vec3 segments[];
+};
+
+layout(push_constant) uniform constants
+{
+    int total_nodes;
+    int offset; // skip leaf nodes
+};
+
+// will probably be slow for large number of nodes
+layout(local_size_x=512, local_size_y=1, local_size_z=1) in;
+void main()
+{
+    if (gl_GlobalInvocationID.x < total_nodes)
+    {
+        uint id = gl_GlobalInvocationID.x + offset;
+        node_t node = nodes[id];
+        if  (node.intensity > 0)
+        {
+            id = 24 * gl_GlobalInvocationID.x;
+            // 0
+            segments[id]     = node.bbox_min;
+            segments[id + 1] = vec3(node.bbox_max.x, node.bbox_min.y, node.bbox_min.z);
+            // 1
+            segments[id + 2] = vec3(node.bbox_max.x, node.bbox_min.y, node.bbox_min.z);
+            segments[id + 3] = vec3(node.bbox_max.x, node.bbox_max.y, node.bbox_min.z);
+            // 2
+            segments[id + 4] = vec3(node.bbox_max.x, node.bbox_max.y, node.bbox_min.z);
+            segments[id + 5] = vec3(node.bbox_min.x, node.bbox_max.y, node.bbox_min.z);
+            // 3
+            segments[id + 6] = vec3(node.bbox_min.x, node.bbox_max.y, node.bbox_min.z);
+            segments[id + 7] = node.bbox_min;
+
+            // 4
+            segments[id + 8] = node.bbox_max;
+            segments[id + 9] = vec3(node.bbox_max.x, node.bbox_min.y, node.bbox_max.z);
+            // 5
+            segments[id + 10] = vec3(node.bbox_max.x, node.bbox_min.y, node.bbox_max.z);
+            segments[id + 11] = vec3(node.bbox_min.x, node.bbox_min.y, node.bbox_max.z);
+            // 6
+            segments[id + 12] = vec3(node.bbox_min.x, node.bbox_min.y, node.bbox_max.z);
+            segments[id + 13] = vec3(node.bbox_min.x, node.bbox_max.y, node.bbox_max.z);
+            // 7
+            segments[id + 14] = vec3(node.bbox_min.x, node.bbox_max.y, node.bbox_max.z);
+            segments[id + 15] = node.bbox_max;
+
+            // 8
+            segments[id + 16] = node.bbox_min;
+            segments[id + 17] = vec3(node.bbox_min.xy, node.bbox_max.z);
+            // 9
+            segments[id + 18] = vec3(node.bbox_min.x, node.bbox_max.y, node.bbox_min.z);
+            segments[id + 19] = vec3(node.bbox_min.x, node.bbox_max.y, node.bbox_max.z);
+            // 10
+            segments[id + 20] = vec3(node.bbox_max.xy, node.bbox_min.z);
+            segments[id + 21] = vec3(node.bbox_max.xy, node.bbox_max.z);
+            // 11
+            segments[id + 22] = vec3(node.bbox_max.x, node.bbox_min.y, node.bbox_min.z);
+            segments[id + 23] = vec3(node.bbox_max.x, node.bbox_min.y, node.bbox_max.z);
+        }
+    }
+}

@@ -18,7 +18,23 @@ void input_manager_t::init(xcb_connection_t* con)
 		{ KEY_S, XK_s },
 		{ KEY_D, XK_d },
 		{ KEY_ESC, XK_Escape },
-		{ KEY_P, XK_p }
+		{ KEY_P, XK_p },
+		{ KEY_0, XK_0 },
+		{ KEY_ARROW_UP, XK_Up },
+		{ KEY_ARROW_DOWN, XK_Down },
+		{ KEY_ARROW_LEFT, XK_Left },
+		{ KEY_ARROW_RIGHT, XK_Right },
+		{ KEY_SHIFT_L, XK_Shift_L },
+		{ KEY_SHIFT_R, XK_Shift_R },
+		{ KEY_R, XK_r },
+		{ KEY_PLUS, XK_plus },
+		{ KEY_MINUS, XK_minus },
+		{ KEY_Q, XK_q },
+		{ KEY_N, XK_n },
+		{ KEY_1, XK_1 },
+		{ KEY_J, XK_j },
+		{ KEY_K, XK_k },
+		{ KEY_2, XK_2 },
 	};
 	size_t keys_count = sizeof(key_mapping) / sizeof(key_mapping_t);
 
@@ -50,11 +66,17 @@ void input_manager_t::init(xcb_connection_t* con)
 				{
 					keycode_map[keycode] = key_mapping[k].key;
                     keyboard[key_mapping[k].key] = UNKOWN;
+                    LOG_INFO("key %d mapped to %d", key_mapping[k].key, keycode);
 					break;
 				}
 			}
 		}
 	}
+
+    for (auto& button : mouse)
+    {
+        button = UNKOWN;
+    }
 
 	prev_mouse_pos = curr_mouse_pos = vec2(-1.0f); // center of screen
 	pointer_inside_window = true;
@@ -89,7 +111,7 @@ void input_manager_t::update()
 
     prev_mouse_pos = curr_mouse_pos;
 }
-
+    
 void input_manager_t::handle_event(window_t* window, xcb_generic_event_t *event, xcb_generic_event_t *next)
 {
 	switch (event->response_type & ~0x80)
