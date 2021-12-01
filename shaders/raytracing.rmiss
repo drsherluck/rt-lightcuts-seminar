@@ -1,13 +1,9 @@
 #version 460 
 #extension GL_EXT_ray_tracing : require
+#extension GL_GOOGLE_include_directive : enable
 
-struct payload_t
-{
-    int sample_id;
-    float seed;
-    vec4 color;
-    bool hit;
-};
+#include "rtx.inc"
+
 layout(location = 0) rayPayloadInEXT payload_t payload;
 
 void main()

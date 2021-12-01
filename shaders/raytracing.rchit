@@ -14,6 +14,7 @@
 #define NODES_SSBO_SET 0
 #define NODES_SSBO_BINDING 5
 #include "lightcuts.inc"
+#include "rtx.inc"
 
 struct vertex_t
 {
@@ -97,13 +98,6 @@ layout(push_constant) uniform constants
     bool is_ortho; // 4 bytes
 };
 
-struct payload_t
-{
-    int sample_id;
-    float seed;
-    vec4 color;
-    bool hit;
-};
 layout(location = 0) rayPayloadInEXT payload_t payload;
 layout(location = 1) rayPayloadEXT bool is_shadow;
 hitAttributeEXT vec2 attribs;

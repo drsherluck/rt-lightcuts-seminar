@@ -7,6 +7,7 @@
 #define GLSL
 #include "../src/shader_data.h"
 #include "common.inc"
+#include "rtx.inc"
 
 layout(set = 0, binding = 0) uniform camera_ubo 
 {
@@ -15,13 +16,6 @@ layout(set = 0, binding = 0) uniform camera_ubo
 layout(set = 1, binding = 0) uniform accelerationStructureEXT tlas;
 layout(set = 1, binding = 2, rgba32f) uniform image2D img;
 
-struct payload_t
-{
-    int sample_id;
-    float seed;
-    vec4 color;
-    bool hit;
-};
 layout(location = 0) rayPayloadEXT payload_t payload;
 
 layout(push_constant) uniform constants
