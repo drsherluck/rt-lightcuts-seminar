@@ -54,6 +54,12 @@ struct frame_resource_t
 
 // config for what to render or to input into push_constants
 // that can be changed at runtime
+struct cut_t
+{
+	i32 id;
+	i32 selected;
+};
+
 struct render_state_t
 {
     i32  cut_size = 1;
@@ -76,10 +82,7 @@ struct render_state_t
     bool paused = false;
   
     // debugging info passed on for imgui to use
-    struct {
-        i32 id;
-        i32 selected;
-    } cut[MAX_LIGHT_TREE_SIZE] = {};
+    cut_t *cut;
     i32 selected_leafs[MAX_LIGHTS] = {};
 };
 

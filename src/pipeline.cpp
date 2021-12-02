@@ -221,7 +221,8 @@ bool build_graphics_pipeline(gpu_context_t& ctx, pipeline_description_t& desc, p
 	vertex_input_info.vertexAttributeDescriptionCount = static_cast<u32>(desc.attribute_descriptions.size());
 	vertex_input_info.pVertexAttributeDescriptions    = desc.attribute_descriptions.data();
 
-    LOG_INFO("stride %d vs %d", desc.binding_descriptions[0].stride, sizeof(v3) + sizeof(v3) + sizeof(v2));
+    if (desc.binding_descriptions.size() > 0)
+        LOG_INFO("stride %d", desc.binding_descriptions[0].stride);
 	LOG_INFO("#bindings = %d, #attribs = %d", desc.binding_descriptions.size(), desc.attribute_descriptions.size());
 
 	// Input assembly state

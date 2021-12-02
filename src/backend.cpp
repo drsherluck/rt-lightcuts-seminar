@@ -470,9 +470,9 @@ void create_swapchain(gpu_context_t& ctx, window_t* window)
 	VkExtent2D extent = capabilities.currentExtent;
 	if (extent.width == UINT32_MAX)
 	{
-		extent.width = std::clamp((u32) window->get_width(), capabilities.minImageExtent.width, 
+		extent.width = clamp((u32) window->get_width(), capabilities.minImageExtent.width, 
 				capabilities.maxImageExtent.width);
-		extent.height = std::clamp((u32) window->get_height(), capabilities.minImageExtent.height, 
+		extent.height = clamp((u32) window->get_height(), capabilities.minImageExtent.height, 
 				capabilities.maxImageExtent.height);
 	}
 	LOG_INFO("Resolution: %dx%d", extent.width, extent.height);

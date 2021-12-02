@@ -134,6 +134,7 @@ int main()
     bool pause = false;
 
     render_state_t render_state;
+    render_state.cut = (cut_t*) malloc(sizeof(cut_t) * MAX_LIGHT_TREE_SIZE);
     camera_t *curr_camera = &camera;
     while(run)
     {

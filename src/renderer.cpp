@@ -8,6 +8,47 @@
 #include "ui.h"
 
 #include <cassert>
+
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32) && !defined(__CYGWIN__)
+#define NOMINMAX
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#define CLOCK_REALTIME 1
+
+// port clock_gettime on windows (quick fix)
+// https://stackoverflow.com/questions/5404277/porting-clock-gettime-to-windows
+int clock_gettime(int, struct timespec* tv)
+{
+    static int initialized = 0;
+    static LARGE_INTEGER freq, start_count;
+    static struct timespec tv_start;
+    LARGE_INTEGER cur_count;
+    time_t sec_part;
+    time_t nsec_part;
+
+    if (!initialized)
+    {
+		QueryPerformanceFrequency(&freq);
+		QueryPerformanceCounter(&start_count);
+        timespec_get(&tv_start, TIME_UTC);
+        initialized = 1;
+    }
+	QueryPerformanceCounter(&cur_count);
+    cur_count.QuadPart -= start_count.QuadPart;
+    sec_part = cur_count.QuadPart / freq.QuadPart;
+    nsec_part = (long)((cur_count.QuadPart - (sec_part * freq.QuadPart))
+        * 1000000000UL / freq.QuadPart);
+    tv->tv_sec = tv_start.tv_sec + sec_part;
+    tv->tv_nsec = tv_start.tv_nsec + nsec_part;
+    if (tv->tv_nsec >= 1000000000UL) 
+    {
+        tv->tv_sec += 1;
+        tv->tv_nsec -= 1000000000UL;
+    }
+    return 0;
+}
+#endif
+
 #define ENABLE_MORTON_ENCODE 1
 #define ENABLE_SORT_LIGHTS 1
 #define ENABLE_LIGHT_TREE 1
@@ -1237,7 +1278,7 @@ void renderer_t::draw_scene(scene_t& scene, camera_t& camera, render_state_t& st
             constants.color = vec3(1, 0, 0);
             constants.is_bbox = 0;
             vkCmdPushConstants(cmd, lines_pipeline.layout, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(constants), &constants);
-            vkCmdDraw(cmd, state.num_samples * 2, 1, 0, 0);
+            vkCmdDraw(cmd, state.cut_size * 2, 1, 0, 0);
         }
 
         // draw light points
