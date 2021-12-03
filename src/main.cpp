@@ -9,8 +9,8 @@
 
 #include <algorithm>
 
-#define WIDTH 1024
-#define HEIGHT 768
+#define WIDTH 1280
+#define HEIGHT 960
 
 #define USE_RANDOM_LIGHTS 0
 #define DISTANCE_FROM_ORIGIN 1

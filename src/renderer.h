@@ -104,20 +104,21 @@ struct renderer_t
     VkFramebuffer          bbox_framebuffers[BUFFERED_FRAMES];
     VkRenderPass           bbox_render_pass;
 
-    pipeline_t             prepass_pipeline;
+    pipeline_t             prepass_pipeline; // render the depth and albedo in a prepass
     pipeline_t             debug_pipeline;
-    pipeline_t             rtx_pipeline;
-    pipeline_t             query_pipeline;
-    pipeline_t             post_pipeline;
-    pipeline_t             points_pipeline;
-    pipeline_t             lines_pipeline;
+    pipeline_t             rtx_pipeline; // renders the scene 
+    pipeline_t             query_pipeline; // query if a ray hits a triangle in the scene
+    pipeline_t             post_pipeline; // hdr post processing 
+    pipeline_t             points_pipeline; // render the light sources as colored points
+    pipeline_t             lines_pipeline; // render lines
     
     // compute pipelines
-    pipeline_t             morton_compute_pipeline;
-    pipeline_t             sort_compute_pipeline;
-    pipeline_t             tree_leafs_compute_pipeline;
-    pipeline_t             tree_compute_pipeline;
-    pipeline_t             bbox_lines_pso;
+    pipeline_t             morton_compute_pipeline; // encodes light sources with their morton encoding
+    pipeline_t             sort_compute_pipeline;  // bitonic sort
+    pipeline_t             tree_leafs_compute_pipeline; // generate leaf nodes of the light tree
+    pipeline_t             tree_compute_pipeline; // generate the inner nodes of the rest of the tree
+    pipeline_t             bbox_lines_pso; // generate the lines for displaying the bboxes
+
     shader_binding_table_t sbt;
     shader_binding_table_t query_sbt;
     staging_buffer_t       staging;
