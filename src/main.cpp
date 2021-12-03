@@ -117,7 +117,7 @@ int main()
     f32 aspect = window.get_aspect_ratio();
     camera_t camera;
     camera.set_perspective(radians(60.0f), aspect);
-    camera.position = vec3(0, 3, -4);
+    camera.position = vec3(0, 5, -10);
     camera.lookat(vec3(0));
     camera.update(0, window);
 
@@ -282,6 +282,7 @@ int main()
         }
     }
 
+    free(render_state.cut);
     destroy_scene(renderer.context, scene);
     return 0;
 }

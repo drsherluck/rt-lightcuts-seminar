@@ -14,7 +14,8 @@ static VkTransformMatrixKHR to_transform_matrix_khr(m4x4 model)
 
 void create_scene(gpu_context_t& context, std::vector<mesh_data_t>& mesh_data, scene_t& scene)
 {
-    staging_buffer_t staging(&context);
+    staging_buffer_t staging;
+    init_staging_buffer(staging, &context);
 
     u32 vbo_size = 0;
     u32 ibo_size = 0;
@@ -58,6 +59,7 @@ void create_scene(gpu_context_t& context, std::vector<mesh_data_t>& mesh_data, s
 
     end_upload(staging);
     VK_CHECK( vkQueueWaitIdle(context.q_transfer) );
+    destroy_staging_buffer(staging);
 }
 
 void create_acceleration_structures(gpu_context_t& context, scene_t& scene)
@@ -145,6 +147,8 @@ void update_acceleration_structures(gpu_context_t& context, scene_t& scene)
 
 void destroy_scene(gpu_context_t& context, scene_t& scene)
 {
+    wait_idle(context);
+
     destroy_acceleration_structure_builder(scene.as_builder);
     vkDestroyAccelerationStructure(context.device, scene.tlas.handle, nullptr);
     destroy_buffer(context, scene.tlas.buffer);

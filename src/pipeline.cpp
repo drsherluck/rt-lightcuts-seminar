@@ -582,6 +582,11 @@ bool build_shader_binding_table(gpu_context_t& context, rt_pipeline_description_
     return true;
 }
 
+void destroy_shader_binding_table(gpu_context_t& context, shader_binding_table_t& sbt)
+{
+    destroy_buffer(context, sbt.buffer);
+}
+
 void add_shader(compute_pipeline_description_t& description, std::string entry, const char* path)
 {
     file_contents_t shader_code;
