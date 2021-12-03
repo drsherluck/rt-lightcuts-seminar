@@ -8,7 +8,7 @@ i32 read_file(const char* path, file_contents_t* out)
     if (!out) return 0;
 
     FILE* fp;
-    fp = fopen(path, "r");
+    fp = fopen(path, "rb"); // binary mode hardcoded
     if (!fp)
     {
         LOG_ERROR("Could not open file");
@@ -30,7 +30,7 @@ i32 read_file(const char* path, file_contents_t* out)
     i32 bytes = fread(out->contents, 1, out->size, fp);
     if (bytes != out->size)
     {
-        LOG_ERROR("Could not read the file");
+        LOG_ERROR("Could not read the file %s, read %d bytes out of the %d bytes", path, bytes, out->size);
         return -3;
     }
 

@@ -10,7 +10,6 @@ void init_acceleration_structure_builder(acceleration_structure_builder_t& build
 {
     LOG_INFO("INIT AS BUILDER");
     builder.context = ctx;
-    //builder.staging = staging_buffer_t(ctx);
     init_staging_buffer(builder.staging, ctx);
     init_command_allocator(ctx->device, ctx->q_compute_index, builder.command_allocator);
 }
@@ -252,6 +251,7 @@ void build_blases(acceleration_structure_builder_t& builder,
 
 void destroy_acceleration_structure_builder(acceleration_structure_builder_t& builder)
 {
+    destroy_staging_buffer(builder.staging);
     destroy_command_allocator(builder.command_allocator);
 };
 

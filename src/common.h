@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <cfloat>
 
-#define FORCEINLINE inline __attribute__((always_inline))
+#define ENGINE_FORCEINLINE inline __attribute__((always_inline))
 #define EPSILON 0.000001
 
 typedef float    f32;

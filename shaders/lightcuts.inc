@@ -233,7 +233,7 @@ void select_lights(vec3 p,
         }
         if (id != INVALID_ID)
         {
-            id = get_array_index(id, num_nodes);
+            id = nodes[get_array_index(id, num_nodes)].id;
         }
         selected_lights[i].id = id;
         selected_lights[i].prob = prob;

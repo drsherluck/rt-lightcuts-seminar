@@ -14,6 +14,7 @@
 #define NODES_SSBO_SET 0
 #define NODES_SSBO_BINDING 5
 #include "lightcuts.inc"
+#include "rtx.inc"
 
 struct vertex_t
 {
@@ -65,6 +66,8 @@ layout(set = 1, binding = 1) uniform scene_ubo
     scene_info_t scene;
 };
 
+
+// set 2 is all debuging and info buffers
 layout(std430, set = 2, binding = 0) readonly buffer vbo_info
 {
     query_output_t debug;
@@ -75,9 +78,14 @@ layout(std430, set = 2, binding = 1) writeonly buffer vbo_lines
     vec3 line_points[];
 };
 
-layout(std430, set = 2, binding = 2) writeonly buffer hl_nodes
+layout(std430, set = 2, binding = 2) buffer hl_nodes
 {
-    bool cut_nodes[];
+    int cut_nodes[];
+};
+
+layout(std430, set = 2, binding = 3) buffer sel_nodes
+{
+    int selected_leaf_nodes[]; // what was selected
 };
 
 layout(push_constant) uniform constants
@@ -86,15 +94,10 @@ layout(push_constant) uniform constants
     int num_leaf_nodes;
     float time;
     uint num_samples;
+    uint user_cut_size;
     bool is_ortho; // 4 bytes
 };
 
-struct payload_t
-{
-    int sample_id;
-    float seed;
-    vec4 color;
-};
 layout(location = 0) rayPayloadInEXT payload_t payload;
 layout(location = 1) rayPayloadEXT bool is_shadow;
 hitAttributeEXT vec2 attribs;
@@ -124,7 +127,7 @@ void main()
     uint cut_size;
     light_cut_t light_cut[MAX_CUT_SIZE];
     selected_light_t selected_lights[MAX_CUT_SIZE];
-    gen_light_cut(world_position, world_normal, light_cut, num_nodes, num_leaf_nodes, cut_size, num_samples);
+    gen_light_cut(world_position, world_normal, light_cut, num_nodes, num_leaf_nodes, cut_size, user_cut_size);
     float r = random(vec4(gl_LaunchIDEXT.xy, payload.seed, time));
     select_lights(world_position, world_normal, cut_size, light_cut, selected_lights, num_nodes, num_leaf_nodes, r);
 
@@ -187,7 +190,8 @@ void main()
                 line_points[idx + 1] = vec3(0);
             }
             uint id = get_array_index(light_cut[i].id, num_nodes);
-            cut_nodes[id] = true;
+            cut_nodes[id] = 1; // mark node/subtree as selected
+            selected_leaf_nodes[selection.id] = 1; // mark as leaf node selected
         }
         attenuation *= 1.0 / (distance * distance);
         vec3 px = light.color * attenuation * (diffuse + specular) * inv_prob;

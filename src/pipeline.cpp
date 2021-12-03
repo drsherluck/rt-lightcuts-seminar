@@ -221,7 +221,8 @@ bool build_graphics_pipeline(gpu_context_t& ctx, pipeline_description_t& desc, p
 	vertex_input_info.vertexAttributeDescriptionCount = static_cast<u32>(desc.attribute_descriptions.size());
 	vertex_input_info.pVertexAttributeDescriptions    = desc.attribute_descriptions.data();
 
-    LOG_INFO("stride %d vs %d", desc.binding_descriptions[0].stride, sizeof(v3) + sizeof(v3) + sizeof(v2));
+    if (desc.binding_descriptions.size() > 0)
+        LOG_INFO("stride %d", desc.binding_descriptions[0].stride);
 	LOG_INFO("#bindings = %d, #attribs = %d", desc.binding_descriptions.size(), desc.attribute_descriptions.size());
 
 	// Input assembly state
@@ -579,6 +580,11 @@ bool build_shader_binding_table(gpu_context_t& context, rt_pipeline_description_
     LOG_INFO("written to sbt buffer");
     context.allocator.unmap_memory(sbt.buffer.allocation);
     return true;
+}
+
+void destroy_shader_binding_table(gpu_context_t& context, shader_binding_table_t& sbt)
+{
+    destroy_buffer(context, sbt.buffer);
 }
 
 void add_shader(compute_pipeline_description_t& description, std::string entry, const char* path)

@@ -22,6 +22,14 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR
 		" -03 -ffast-math -fno-unsafe-math-optimizations -fomit-frame-pointer")
 endif()
 
+if(MSVC)
+    set(CMAKE_CXX_STANDARD 17)
+    set(CMAKE_CXX_STANDARD_REQUIRED ON)
+    # temporary fix
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} /STACK:10000000")
+	string(APPEND CMAKE_CXX_FLAGS_DEBUG " -D_DEBUG")
+endif()
+
 # Add after setting options
 add_executable(${CMAKE_PROJECT_NAME})
 # https://stackoverflow.com/a/40947954/15620835
@@ -35,9 +43,11 @@ find_package(Vulkan)
 if(!Vulkan_FOUND)
 	message(FATAL_ERROR "Vulkan library not found.")
 endif()
+message(STATUS "Found vulkan library and headers")
 
 ### Compile shaders ###
 add_subdirectory(shaders)
+add_dependencies(engine shaders)
 
 ### Copy resource files into build folder ###
 add_custom_command(TARGET engine POST_BUILD 
@@ -58,6 +68,7 @@ else()
     list(REMOVE_ITEM SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/src/glfw_input.cpp 
         ${CMAKE_CURRENT_SOURCE_DIR}/src/glfw_window.cpp)
 endif()
+target_include_directories(engine PRIVATE ${Vulkan_INCLUDE_DIRS})
 target_sources(engine PRIVATE ${SOURCES})
 
 
@@ -75,7 +86,7 @@ if (NOT USING_GLFW EQUAL -1)
     target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE glfw)
 
     add_library(imgui STATIC)
-    target_include_directories(imgui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui")
+    target_include_directories(imgui PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui" ${Vulkan_INCLUDE_DIRS})
     target_sources(imgui PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui/imgui.h"
         "${CMAKE_CURRENT_SOURCE_DIR}/external/imgui/imgui.cpp"

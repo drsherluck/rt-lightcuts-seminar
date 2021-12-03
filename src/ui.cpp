@@ -56,7 +56,8 @@ bool new_frame(imgui_t& imgui, render_state_t* state, scene_t* scene, frame_time
     ImGui::Checkbox("Only render selected bbox nodes",  &state->render_only_selected_nodes);
     if (!state->render_bboxes) 
         ImGui::EndDisabled();
-    ImGui::SliderInt("Cut size", &state->num_samples, 1, MIN(static_cast<i32>(scene->lights.size()), 32));
+    ImGui::SliderInt("Samples ppx", &state->num_samples, 1, 16);
+    ImGui::SliderInt("Cut size", &state->cut_size, 1, MIN(static_cast<i32>(scene->lights.size()), 32));
     ImGui::Checkbox("Random lights", &state->use_random_lights);
     if (state->use_random_lights)
     {
@@ -66,34 +67,86 @@ bool new_frame(imgui_t& imgui, render_state_t* state, scene_t* scene, frame_time
     ImVec2 region = ImGui::GetContentRegionAvail();
     region.y = MIN(region.y, 150);
 
-    if (!state->use_random_lights && ImGui::BeginListBox("Lights", region))
+    static ImGuiTableFlags flags = ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_RowBg | 
+        ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable;
+    if (!state->use_random_lights && ImGui::BeginChild("Lights", region))
     {
         ImGui::Text("Scene");
-        if (ImGui::BeginTable("Lights Table", 2))
+        if (ImGui::BeginTable("Lights Table", 2, flags))
         {
             ImGuiColorEditFlags flags = ImGuiColorEditFlags_DisplayRGB | ImGuiColorEditFlags_NoInputs |
                 ImGuiColorEditFlags_NoLabel | ImGuiColorEditFlags_PickerHueWheel;
+            ImGui::TableSetupColumn("Id");
+            ImGui::TableSetupColumn("Color", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableHeadersRow();
             int i = 0;
             for (auto& light : scene->lights)
             {
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn();
+                ImGui::Text("%d", i);
+                ImGui::TableNextColumn();
                 char buf[50];
                 sprintf(buf, "%d", i++); 
                 ImGui::ColorEdit3(buf, light.color.data, flags);
-                ImGui::TableNextColumn();
-                const char* label = "light";
-                ImGui::Text("%s", label);
             }
             ImGui::EndTable();
         }
-        ImGui::EndListBox();
+        ImGui::EndChild();
     }
     if (ImGui::Button("Add light"))
     {
         v3 dir = normalize(vec3(_randf2(), _randf(), _randf2()));
         v3 pos = dir * _randf() * 5.0f;
         add_light(*scene, pos, vec3(1));
+    }
+    ImGui::End();
+
+    ImGui::Begin("Debug");
+    region = ImGui::GetContentRegionAvail();
+    if (region.y > 0 && ImGui::BeginChild("debug", region))
+    {
+        ImVec4 select_color = ImVec4(0, 0.823, 0.83, 1);
+        if (ImGui::BeginTable("debugtable", 3))
+        {
+            ImGui::TableSetupColumn("Index");
+            ImGui::TableSetupColumn("Id");
+            ImGui::TableSetupColumn("Selected");
+            ImGui::TableHeadersRow();
+            i32 num_leafs = next_pow2(scene->lights.size());
+            i32 h = static_cast<i32>(log2(num_leafs));
+            i32 num = (1 << (h + 1)) - 1;
+            for (i32 i = 0; i < num; i++)
+            {
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn();
+                ImGui::Text("%d", i);
+                ImGui::TableNextColumn();
+                if (i < scene->lights.size() && state->selected_leafs[i])
+                {
+                    ImGui::TextColored(select_color, "%d", state->cut[i].id);
+                }
+                else 
+                {
+                    if (i >= num_leafs)
+                    {
+                        ImGui::Text("-");
+                    }
+                    else if (state->cut[i].id == -1)
+                    {
+                        ImGui::Text("[d]");
+                    }
+                    else
+                    {
+                        ImGui::Text("%d", state->cut[i].id);
+                    }
+                }
+                ImGui::TableNextColumn();
+                ImGui::Text("%d", state->cut[i].selected);
+            }
+            ImGui::EndTable();
+        }
+        ImGui::EndChild();
     }
     ImGui::End();
     ImGui::Render();

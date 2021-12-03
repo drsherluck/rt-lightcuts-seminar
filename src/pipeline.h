@@ -101,6 +101,7 @@ bool build_graphics_pipeline(gpu_context_t& ctx, pipeline_description_t& descrip
 
 bool build_raytracing_pipeline(gpu_context_t& ctx, rt_pipeline_description_t& description, pipeline_t* pipeline);
 bool build_shader_binding_table(gpu_context_t& ctx, rt_pipeline_description_t& description, pipeline_t& pipeline, shader_binding_table_t& sbt);
+void destroy_shader_binding_table(gpu_context_t& context, shader_binding_table_t& sbt);
 void add_shader(rt_pipeline_description_t& description, VkShaderStageFlagBits stage, std::string entry, const char* path);
 
 bool build_compute_pipeline(gpu_context_t& ctx, compute_pipeline_description_t&, pipeline_t* pipeline);

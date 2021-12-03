@@ -5,3 +5,6 @@ lib/
 # Executables
 bin/
 
+# VS
+.vs/
+CMakeSettings.json

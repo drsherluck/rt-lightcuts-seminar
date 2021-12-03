@@ -7,6 +7,7 @@
 #define GLSL
 #include "../src/shader_data.h"
 #include "common.inc"
+#include "rtx.inc"
 
 layout(set = 0, binding = 0) uniform camera_ubo 
 {
@@ -15,12 +16,6 @@ layout(set = 0, binding = 0) uniform camera_ubo
 layout(set = 1, binding = 0) uniform accelerationStructureEXT tlas;
 layout(set = 1, binding = 2, rgba32f) uniform image2D img;
 
-struct payload_t
-{
-    int sample_id;
-    float seed;
-    vec4 color;
-};
 layout(location = 0) rayPayloadEXT payload_t payload;
 
 layout(push_constant) uniform constants
@@ -29,6 +24,7 @@ layout(push_constant) uniform constants
     int num_leaf_nodes;
     float time;
     uint num_samples;
+    uint user_cut_size;
     bool is_ortho; // 4 bytes
 };
 
@@ -48,7 +44,8 @@ void main()
     }
 
     vec4 px_color = vec4(0);
-    for (int i = 0; i < NUM_SAMPLES; i++)
+    payload.hit = true;
+    for (int i = 0; i < num_samples; i++)
     {
         payload.sample_id = i;
         payload.seed = random(i);
@@ -65,7 +62,8 @@ void main()
             0
         );
         
-        px_color += payload.color/NUM_SAMPLES;
+        px_color += payload.color/num_samples;
+        if (!payload.hit) break;
     }
 
     imageStore(img, ivec2(gl_LaunchIDEXT.xy), px_color);

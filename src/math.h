@@ -156,6 +156,11 @@ inline f32 clamp(f32 value, f32 min_value, f32 max_value)
     return value;
 }
 
+inline u32 clamp(u32 value, u32 min_value, u32 max_value)
+{
+    return (value > max_value) ? max_value : (value < min_value) ? min_value : value;
+}
+
 inline u32 next_pow2(u32 v)
 {
     v--;

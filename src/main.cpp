@@ -59,6 +59,14 @@ static void move_lights(scene_t& scene, v4 t)
     }
 }
 
+static void add_default_lights(scene_t& scene) 
+{
+    add_light(scene, vec3(2, 1, -2), vec3(1, 0, 0));
+    add_light(scene, vec3(1, 2, 2), vec3(0, 1, 0));
+    add_light(scene, vec3(-2, 4, -1), vec3(0, 0, 1));
+    add_light(scene, vec3(-2, 3, 2), vec3(1, 1, 1));
+}
+
 int main()
 {
     window_t window;
@@ -92,10 +100,7 @@ int main()
         add_entity(scene, 0, 0, translate4x4(0, 1, 0) * scale4x4(0.5) * rotate4x4_y(radians(45)));
         add_entity(scene, 1, 1, translate4x4(0, -0.5, 0) * scale4x4(2));
 #if !USE_RANDOM_LIGHTS
-        add_light(scene, vec3(2, 1, -2), vec3(1, 0, 0));
-        add_light(scene, vec3(1, 2, 2), vec3(0, 1, 0));
-        add_light(scene, vec3(-2, 4, -1), vec3(0, 0, 1));
-        add_light(scene, vec3(-2, 3, 2), vec3(1, 1, 1));
+        add_default_lights(scene);
 #else
         add_random_lights(scene, RANDOM_LIGHT_COUNT, vec3(0), DISTANCE_FROM_ORIGIN);
 #endif
@@ -112,7 +117,7 @@ int main()
     f32 aspect = window.get_aspect_ratio();
     camera_t camera;
     camera.set_perspective(radians(60.0f), aspect);
-    camera.position = vec3(0, 3, -4);
+    camera.position = vec3(0, 5, -10);
     camera.lookat(vec3(0));
     camera.update(0, window);
 
@@ -129,6 +134,7 @@ int main()
     bool pause = false;
 
     render_state_t render_state;
+    render_state.cut = (cut_t*) malloc(sizeof(cut_t) * MAX_LIGHT_TREE_SIZE);
     camera_t *curr_camera = &camera;
     while(run)
     {
@@ -147,11 +153,7 @@ int main()
             }
             else
             {
-                // default lights
-                add_light(scene, vec3(2, 1, -2), vec3(1, 0, 0));
-                add_light(scene, vec3(1, 2, 2), vec3(0, 1, 0));
-                add_light(scene, vec3(-2, 4, -1), vec3(0, 0, 1));
-                add_light(scene, vec3(-2, 3, 2), vec3(1, 1, 1));
+                add_default_lights(scene);
             }
         }
         // move lighs from origin if it was changed
@@ -259,12 +261,10 @@ int main()
             if (is_key_pressed(window, KEY_EQUAL)) 
             {
                 render_state.num_samples = MIN(render_state.num_samples + 1, scene.lights.size());
-                LOG_INFO("num samples = %d", render_state.num_samples);
             }
             if (is_key_pressed(window, KEY_MINUS)) 
             {
                 render_state.num_samples = MAX(render_state.num_samples - 1, 1);
-                LOG_INFO("num samples = %d", render_state.num_samples);
             }
 
             scene.entities[1].m_model *= rotate4x4_y(dt);
@@ -282,6 +282,7 @@ int main()
         }
     }
 
+    free(render_state.cut);
     destroy_scene(renderer.context, scene);
     return 0;
 }

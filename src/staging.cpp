@@ -12,56 +12,6 @@ static void* get_next_mapped_data(staging_buffer_t& staging, VkDeviceSize& offse
     return static_cast<void*>((u8*)staging.mapped + offset);
 }
 
-staging_buffer_t::staging_buffer_t(gpu_context_t* _context)
-{
-    LOG_INFO("CONTRUCTOR UPLOADER");
-    assert(_context);
-    context = _context;
-    used_space = 0;
-    create_buffer(*(context), STAGING_DEFAULT_ALLOCATION_SIZE, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, &buffer,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-    context->allocator.map_memory(buffer.allocation, (void**)&mapped);
-    
-    VkFenceCreateInfo fence_create = {};
-    fence_create.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
-    fence_create.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-    VK_CHECK( vkCreateFence(context->device, &fence_create, nullptr, &fence) );
-
-    VkCommandPoolCreateInfo pool_create = {};
-    pool_create.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-    pool_create.queueFamilyIndex = context->q_transfer_index;
-    VK_CHECK( vkCreateCommandPool(context->device, &pool_create, nullptr, &command_pool) );
-
-    VkCommandBufferAllocateInfo info = {};
-    info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-    info.commandPool = command_pool;
-    info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-    info.commandBufferCount = 1;
-    VK_CHECK( vkAllocateCommandBuffers(context->device, &info, &cmd) );
-
-    VkSemaphoreCreateInfo semaphore_info = {};
-    semaphore_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-    VK_CHECK( vkCreateSemaphore(context->device, &semaphore_info, nullptr, &upload_complete) );
-};
-
-staging_buffer_t::~staging_buffer_t()
-{
-    LOG_INFO("DESTRUCTOR UPLOADER");
-    if (fence)
-    {
-        VK_CHECK( vkWaitForFences(context->device, 1, &fence, VK_TRUE, ONE_SECOND_IN_NANOSECONDS) );
-    }
-    VK_CHECK( vkResetCommandPool(context->device, command_pool, 0) );
-    context->allocator.unmap_memory(buffer.allocation);
-    destroy_buffer(*(context), buffer);
-    vkDestroyFence(context->device, fence, nullptr);
-    if (upload_complete)
-    {
-        vkDestroySemaphore(context->device, upload_complete, nullptr);
-    }
-    vkDestroyCommandPool(context->device, command_pool, nullptr);
-}
-
 void begin_upload(staging_buffer_t& staging)
 {
     VK_CHECK( vkWaitForFences(staging.context->device, 1, &staging.fence, VK_TRUE, ONE_SECOND_IN_NANOSECONDS) );
@@ -128,12 +78,17 @@ void init_staging_buffer(staging_buffer_t& staging, gpu_context_t* _context)
     VK_CHECK( vkCreateSemaphore(staging.context->device, &semaphore_info, nullptr, &staging.upload_complete) );
 }
 
-/*
+
 void destroy_staging_buffer(staging_buffer_t& staging)
 {
+    VK_CHECK( vkWaitForFences(staging.context->device, 1, &staging.fence, VK_TRUE, ONE_SECOND_IN_NANOSECONDS) );
+    VK_CHECK( vkResetCommandPool(staging.context->device, staging.command_pool, 0) );
     staging.context->allocator.unmap_memory(staging.buffer.allocation);
-    destroy_buffer(*staging.context, staging.buffer);
-}*/
+    destroy_buffer(*(staging.context), staging.buffer);
+    vkDestroyFence(staging.context->device, staging.fence, nullptr);
+    vkDestroySemaphore(staging.context->device, staging.upload_complete, nullptr);
+    vkDestroyCommandPool(staging.context->device, staging.command_pool, nullptr);
+}
 
 void copy_to_buffer(staging_buffer_t& staging, buffer_t& dst, u32 size, void* data, u64 offset)
 {
