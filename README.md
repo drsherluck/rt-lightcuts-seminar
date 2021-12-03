@@ -11,14 +11,21 @@ The paper implemented (partialy): <a href="https://dl.acm.org/doi/10.1145/338454
 * <a href="https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator">vma</a>
 * <a href="https://github.com/tinyobjloader/tinyobjloader">tinyobjloader</a>
 
-## Running
-In the root directory run these commands, these will compile the program and the shaders (glslangValidator is needed to compile the shaders)
+## Compile instructions
+First install the necessary dependencies: <br>
+* Glslang (needed to compile the shaders) from their <a href="https://github.com/KhronosGroup/glslang/releases">release page</a> and add the bin folder to your PATH.<br>
+* Vulkan sdk <a href="https://vulkan.lunarg.com/sdk/home#windows">here</a>.
+
+Clone the project with submodles:
+```
+git clone --recursive https://github.com/drsherluck/rt-lightcuts-seminar
+```
+#### Compile and run
+Linux: from root directory run these commands:
 ```
 mkdir bin
 cmake ..
 make 
-make shaders
 ./engine
 ```
-
-Note: only tested on Linux, may not work on Windows
+Windows: use Visual Studio with CMake
